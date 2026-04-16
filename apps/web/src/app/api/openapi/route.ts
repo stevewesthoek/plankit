@@ -246,6 +246,54 @@ export async function GET() {
             }
           }
         }
+      },
+      '/api/actions/search': {
+        post: {
+          summary: 'ChatGPT Custom Action: Search local vault',
+          description: 'Search the connected local vault for files matching the query',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['query'],
+                  properties: {
+                    query: { type: 'string', description: 'Search query' },
+                    limit: { type: 'integer', default: 10, description: 'Maximum results to return' }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Search results from local vault',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      results: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            path: { type: 'string', description: 'File path in vault' },
+                            title: { type: 'string', description: 'File title' },
+                            score: { type: 'number', description: 'Relevance score' },
+                            snippet: { type: 'string', description: 'File content preview' },
+                            modifiedAt: { type: 'string', description: 'Last modified timestamp' }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   }
