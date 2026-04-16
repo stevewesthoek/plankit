@@ -1,8 +1,12 @@
-# Phase 3.4: Live ChatGPT Custom GPT Action UI Verification
+# Phase 3.4: ChatGPT Custom GPT Action UI Verification — Runbook
 
-Phase 3.4 performs the first real manual testing of ChatGPT Custom GPT Actions integration via a public HTTPS tunnel.
+Phase 3.4 provides the complete runbook for manual ChatGPT Custom GPT Actions integration testing via a public HTTPS tunnel.
 
-This phase is **semi-automated**: The stack setup and tunnel configuration are automated. Manual testing in ChatGPT UI happens via user action.
+**Status:** Runbook ready. Manual ChatGPT UI import and testing has **not yet been performed** by the user.
+
+This phase is **runbook-only**: Documentation and local verification provided. User performs manual ChatGPT Custom GPT setup and testing via ChatGPT UI.
+
+⚠️ **Important:** Tunnel URLs are temporary and must NOT be committed to the repo. `/tmp/brainbridge-openapi-chatgpt.json` is for local use only.
 
 ## Automated Stack Setup
 
@@ -173,7 +177,7 @@ Expected response:
 - **Phase 3.1** (ChatGPT Setup): ✅ Complete
 - **Phase 3.2** (Read Action): ✅ Complete
 - **Phase 3.3** (ChatGPT Import Test): ✅ Complete — Runbook documented
-- **Phase 3.4** (Live ChatGPT Test): ✅ Ready for manual testing
+- **Phase 3.4** (ChatGPT UI Test Runbook): ✅ Runbook ready — awaiting manual ChatGPT UI verification
 
 ## Next Steps
 
