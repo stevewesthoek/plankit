@@ -10,7 +10,7 @@ export async function GET() {
     },
     servers: [
       {
-        url: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+        url: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3054'
       }
     ],
     components: {

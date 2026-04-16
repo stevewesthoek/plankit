@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:3000",
+      "url": "http://localhost:3054",
       "description": "Local development (for ngrok/tunnel, replace with https://your-tunnel-domain)"
     }
   ],

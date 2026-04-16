@@ -15,7 +15,7 @@ node dist/server.js
 BRIDGE_URL=ws://127.0.0.1:3053 DEVICE_TOKEN=test-device \
   node packages/cli/dist/index.js serve
 
-# Terminal 3: Web App (port 3000)
+# Terminal 3: Web App (port 3054)
 cd ~/Repos/stevewesthoek/brain-bridge/apps/web
 npm run dev
 ```
@@ -27,7 +27,7 @@ npm run dev
 Find files matching a query:
 
 ```bash
-curl -X POST http://localhost:3000/api/actions/search \
+curl -X POST http://localhost:3054/api/actions/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"brain","limit":5}'
 ```
@@ -52,7 +52,7 @@ Response:
 Read the full content of a file from the vault:
 
 ```bash
-curl -X POST http://localhost:3000/api/actions/read \
+curl -X POST http://localhost:3054/api/actions/read \
   -H 'Content-Type: application/json' \
   -d '{"path":"mind/04-tasks/task-123.md"}'
 ```
@@ -69,12 +69,12 @@ Response:
 
 ```bash
 # 1. Search for files about "brain"
-curl -X POST http://localhost:3000/api/actions/search \
+curl -X POST http://localhost:3054/api/actions/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"brain","limit":2}' | jq '.results[0].path'
 
 # 2. Read the first result (replace with actual path from search)
-curl -X POST http://localhost:3000/api/actions/read \
+curl -X POST http://localhost:3054/api/actions/read \
   -H 'Content-Type: application/json' \
   -d '{"path":"mind/home.md"}'
 ```
@@ -90,7 +90,7 @@ curl -X POST http://localhost:3000/api/actions/read \
 ## ChatGPT Custom Actions: Import
 
 1. Update the OpenAPI spec:
-   - Local: Use live endpoint `http://localhost:3000/api/openapi`
+   - Local: Use live endpoint `http://localhost:3054/api/openapi`
    - Public: Use static file `docs/openapi.chatgpt.json` (after replacing server URL)
 
 2. Import both actions:
@@ -121,7 +121,7 @@ curl -X POST http://localhost:3000/api/actions/read \
 ## Testing Checklist
 
 - [ ] Local agent running, bridge connected
-- [ ] Web app serving on port 3000
+- [ ] Web app serving on port 3054
 - [ ] Search returns file paths
 - [ ] Read successfully loads file content using search-returned path
 - [ ] Read rejects `../` paths with error

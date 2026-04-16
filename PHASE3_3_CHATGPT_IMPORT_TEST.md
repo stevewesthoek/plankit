@@ -17,7 +17,7 @@ node dist/server.js
 BRIDGE_URL=ws://127.0.0.1:3053 DEVICE_TOKEN=test-device \
   node packages/cli/dist/index.js serve
 
-# Terminal 3: Web App (port 3000)
+# Terminal 3: Web App (port 3054)
 cd ~/Repos/stevewesthoek/brain-bridge/apps/web
 npm run dev
 ```
@@ -26,15 +26,15 @@ npm run dev
 
 ```bash
 # Check OpenAPI spec
-curl -s http://127.0.0.1:3000/api/openapi | jq '.openapi, .paths | keys'
+curl -s http://127.0.0.1:3054/api/openapi | jq '.openapi, .paths | keys'
 
 # Test search action
-curl -s -X POST http://127.0.0.1:3000/api/actions/search \
+curl -s -X POST http://127.0.0.1:3054/api/actions/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"brain","limit":2}'
 
 # Test read action
-curl -s -X POST http://127.0.0.1:3000/api/actions/read \
+curl -s -X POST http://127.0.0.1:3054/api/actions/read \
   -H 'Content-Type: application/json' \
   -d '{"path":"mind/home.md"}'
 ```
@@ -51,8 +51,8 @@ Expected responses:
 # Install (if needed)
 brew install cloudflare-warp
 
-# Start tunnel to localhost:3000
-cloudflared tunnel --url http://localhost:3000
+# Start tunnel to localhost:3054
+cloudflared tunnel --url http://localhost:3054
 ```
 
 Output:
@@ -72,12 +72,12 @@ brew install ngrok
 ngrok config add-authtoken <your-ngrok-token>
 
 # Start tunnel
-ngrok http 3000
+ngrok http 3054
 ```
 
 Output:
 ```
-Forwarding  https://abc123-xyz789.ngrok.io -> http://localhost:3000
+Forwarding  https://abc123-xyz789.ngrok.io -> http://localhost:3054
 ```
 
 **Copy the URL:** `https://abc123-xyz789.ngrok.io`
@@ -91,7 +91,7 @@ Forwarding  https://abc123-xyz789.ngrok.io -> http://localhost:3000
 cp docs/openapi.chatgpt.json /tmp/brainbridge-openapi-chatgpt.json
 
 # Edit the file to replace server URL
-# Change servers[0].url from "http://localhost:3000" to your actual tunnel URL
+# Change servers[0].url from "http://localhost:3054" to your actual tunnel URL
 # For example: "https://abc123def456.trycloudflare.com"
 ```
 
@@ -185,7 +185,7 @@ All should return valid responses with 200 status.
 
 - Verify vault is connected: `node packages/cli/dist/index.js status`
 - Check vault path exists: `ls $VAULT_PATH` (from config)
-- Verify web app is running: `curl http://127.0.0.1:3000/api/openapi`
+- Verify web app is running: `curl http://127.0.0.1:3054/api/openapi`
 
 ### "Tunnel not responding"
 
@@ -212,7 +212,7 @@ All should return valid responses with 200 status.
 ## Next Steps
 
 1. Start the Brain Bridge stack locally
-2. Expose port 3000 via Cloudflare or ngrok tunnel
+2. Expose port 3054 via Cloudflare or ngrok tunnel
 3. Follow the ChatGPT Custom GPT import steps
 4. Test with the provided prompts
 5. Share the GPT or publish with your team

@@ -19,12 +19,12 @@ node dist/server.js
 BRIDGE_URL=ws://127.0.0.1:3053 DEVICE_TOKEN=test-device \
   node packages/cli/dist/index.js serve
 
-# Terminal 3: Web App (port 3000)
+# Terminal 3: Web App (port 3054)
 cd ~/Repos/stevewesthoek/brain-bridge/apps/web
 npm run dev
 
 # Terminal 4: Start tunnel
-cloudflared tunnel --url http://localhost:3000
+cloudflared tunnel --url http://localhost:3054
 ```
 
 ## Tunnel Setup (One-Time)
@@ -34,7 +34,7 @@ cloudflared tunnel --url http://localhost:3000
 brew install cloudflare-warp
 
 # Start tunnel (Terminal 4)
-cloudflared tunnel --url http://localhost:3000
+cloudflared tunnel --url http://localhost:3054
 
 # Copy the output tunnel URL
 # Example: https://onion-lan-folding-diamond.trycloudflare.com
@@ -44,8 +44,8 @@ cloudflared tunnel --url http://localhost:3000
 
 ```bash
 # Verify local endpoints work before proceeding to tunnel
-curl -s http://127.0.0.1:3000/api/openapi | jq '.info.title'
-curl -s -X POST http://127.0.0.1:3000/api/actions/search \
+curl -s http://127.0.0.1:3054/api/openapi | jq '.info.title'
+curl -s -X POST http://127.0.0.1:3054/api/actions/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"brain","limit":1}' | jq '.results[0].path'
 ```
@@ -118,7 +118,7 @@ Expected response:
 
 - Verify tunnel is still running: `ps aux | grep cloudflared | grep -v grep`
 - Check tunnel URL hasn't changed (it's temporary, expires after inactivity)
-- Verify local endpoints still work: `curl http://127.0.0.1:3000/api/openapi`
+- Verify local endpoints still work: `curl http://127.0.0.1:3054/api/openapi`
 - Restart tunnel if needed
 
 ### "Invalid OpenAPI schema"
@@ -130,7 +130,7 @@ Expected response:
 ### "No results" from search
 
 - Verify vault has files: Check `mind/` folder structure
-- Test local search first: `curl -s -X POST http://127.0.0.1:3000/api/actions/search ...`
+- Test local search first: `curl -s -X POST http://127.0.0.1:3054/api/actions/search ...`
 - Check agent is connected to bridge: Verify bridge/agent logs show connection
 
 ### "Path not found" from read

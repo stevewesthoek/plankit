@@ -15,7 +15,7 @@ node dist/server.js
 BRIDGE_URL=ws://127.0.0.1:3053 DEVICE_TOKEN=test-device \
   node packages/cli/dist/index.js serve
 
-# Terminal 3: Web App (port 3000)
+# Terminal 3: Web App (port 3054)
 cd ~/Repos/stevewesthoek/brain-bridge/apps/web
 npm run dev
 ```
@@ -24,7 +24,7 @@ npm run dev
 
 **Live endpoint:**
 ```bash
-curl -s http://localhost:3000/api/openapi | jq .
+curl -s http://localhost:3054/api/openapi | jq .
 ```
 
 **Static file for import:**
@@ -35,7 +35,7 @@ curl -s http://localhost:3000/api/openapi | jq .
 ## Local Test
 
 ```bash
-curl -X POST http://localhost:3000/api/actions/search \
+curl -X POST http://localhost:3054/api/actions/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"brain","limit":2}'
 ```
@@ -62,18 +62,18 @@ To use with ChatGPT, expose localhost via a tunnel:
 ### Option 1: ngrok
 
 ```bash
-ngrok http 3000
+ngrok http 3054
 ```
 
 Output:
 ```
-Forwarding  https://abc123def456.ngrok.io -> http://localhost:3000
+Forwarding  https://abc123def456.ngrok.io -> http://localhost:3054
 ```
 
 ### Option 2: Cloudflare Tunnel
 
 ```bash
-cloudflared tunnel --url http://localhost:3000
+cloudflared tunnel --url http://localhost:3054
 ```
 
 Output:
@@ -83,7 +83,7 @@ https://your-domain.trycloudflare.com
 
 ### Option 3: Custom Domain (Production)
 
-Replace `http://localhost:3000` with your public domain in:
+Replace `http://localhost:3054` with your public domain in:
 - `docs/openapi.chatgpt.json` → `servers[0].url`
 - Or set `NEXT_PUBLIC_API_URL` environment variable when building
 
@@ -131,9 +131,9 @@ Replace `http://localhost:3000` with your public domain in:
 ## Testing Checklist
 
 - [ ] Local agent running, bridge connected
-- [ ] Web app serving on port 3000
-- [ ] `curl http://localhost:3000/api/openapi` returns valid OpenAPI
-- [ ] `curl -X POST http://localhost:3000/api/actions/search` returns search results
+- [ ] Web app serving on port 3054
+- [ ] `curl http://localhost:3054/api/openapi` returns valid OpenAPI
+- [ ] `curl -X POST http://localhost:3054/api/actions/search` returns search results
 - [ ] `docs/openapi.chatgpt.json` imports into ChatGPT Actions without errors
 - [ ] ChatGPT action test returns results for query "brain"
 

@@ -90,7 +90,7 @@ curl -X POST http://127.0.0.1:3001/api/create \
 cd apps/web
 pnpm dev
 ```
-Runs on http://localhost:3000
+Runs on http://localhost:3054
 
 **Terminal 2 — Local Agent:**
 ```bash
@@ -104,20 +104,20 @@ node dist/index.js serve
 **Terminal 3 — Create User & Test:**
 ```bash
 # Create user
-curl -X POST http://localhost:3000/api/auth/register \
+curl -X POST http://localhost:3054/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email": "test@example.com"}'
 
 # Response includes apiKey
 
 # Register device
-curl -X POST http://localhost:3000/api/devices/register \
+curl -X POST http://localhost:3054/api/devices/register \
   -H "Authorization: Bearer <apiKey>" \
   -H "Content-Type: application/json" \
   -d '{"name": "MacBook"}'
 
 # Now test tool calls
-curl -X POST http://localhost:3000/api/tools/search-brain \
+curl -X POST http://localhost:3054/api/tools/search-brain \
   -H "Authorization: Bearer <apiKey>" \
   -H "Content-Type: application/json" \
   -d '{"query": "business goals"}'
@@ -281,7 +281,7 @@ brain-bridge/
 ### Add a new API endpoint
 1. Create `apps/web/src/app/api/path/to/route.ts`
 2. Implement `export async function POST(request: NextRequest)`
-3. Test: `curl http://localhost:3000/api/path/to`
+3. Test: `curl http://localhost:3054/api/path/to`
 
 ### Add a new database model
 1. Edit `apps/web/prisma/schema.prisma`

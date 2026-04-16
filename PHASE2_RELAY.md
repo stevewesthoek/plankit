@@ -8,7 +8,7 @@
 
 ## What Works (Phase 2.0)
 
-✅ **Web app runs locally on port 3000**
+✅ **Web app runs locally on port 3054**
 - Next.js development server
 - Can receive HTTP requests
 
@@ -67,14 +67,14 @@ npm run dev
 **Output:**
 ```
   ▲ Next.js 14.2.35
-  - Local:        http://localhost:3000
+  - Local:        http://localhost:3054
   ...
 ```
 
 ### Terminal 3: Test Relay Health
 
 ```bash
-curl -s http://localhost:3000/api/relay/health | jq .
+curl -s http://localhost:3054/api/relay/health | jq .
 ```
 
 **Response:**
@@ -98,7 +98,7 @@ curl -s http://localhost:3000/api/relay/health | jq .
 ### Terminal 3: Test Relay Search
 
 ```bash
-curl -s -X POST http://localhost:3000/api/relay/search \
+curl -s -X POST http://localhost:3054/api/relay/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"brain","limit":2}' | jq .
 ```
@@ -125,7 +125,7 @@ curl -s -X POST http://localhost:3000/api/relay/search \
 ```
 User
   ↓
-Web App (port 3000)
+Web App (port 3054)
   ├── GET /api/relay/health
   │    └─→ queries Local Agent /health
   │
@@ -174,11 +174,11 @@ sleep 5
 
 # Check relay health
 echo "Checking relay health..."
-curl -s http://localhost:3000/api/relay/health | jq .
+curl -s http://localhost:3054/api/relay/health | jq .
 
 echo ""
 echo "Testing relay search..."
-curl -s -X POST http://localhost:3000/api/relay/search \
+curl -s -X POST http://localhost:3054/api/relay/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"brain","limit":2}' | jq .
 
@@ -215,7 +215,7 @@ kill $AGENT_PID $WEB_PID
 ## Testing Checklist
 
 - ✅ Local agent starts on 3052
-- ✅ Web app starts on 3000
+- ✅ Web app starts on 3054
 - ✅ `/api/relay/health` returns status
 - ✅ `/api/relay/search` relays queries
 - ✅ Search results returned correctly

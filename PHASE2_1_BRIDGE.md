@@ -5,7 +5,7 @@ Phase 2.1 adds an outbound WebSocket bridge relay that allows the web app and ot
 ## Architecture
 
 ```
-Web App (port 3000)
+Web App (port 3054)
     ├─→ /api/relay/search (Phase 2.0: direct HTTP → local agent)
     └─→ /api/bridge/search (Phase 2.1: HTTP → relay → agent via WebSocket)
 
@@ -45,7 +45,7 @@ Agent connects to bridge and registers with device token.
 cd apps/web && npm run dev
 ```
 
-Web app runs on `http://127.0.0.1:3000`.
+Web app runs on `http://127.0.0.1:3054`.
 
 ## Endpoints
 
@@ -118,10 +118,10 @@ Response:
 curl http://127.0.0.1:3053/health | jq .
 
 # Via web app
-curl http://127.0.0.1:3000/api/bridge/health | jq .
+curl http://127.0.0.1:3054/api/bridge/health | jq .
 
 # Search via web app
-curl -X POST http://127.0.0.1:3000/api/bridge/search \
+curl -X POST http://127.0.0.1:3054/api/bridge/search \
   -H "Content-Type: application/json" \
   -d '{"query":"test"}'
 ```
