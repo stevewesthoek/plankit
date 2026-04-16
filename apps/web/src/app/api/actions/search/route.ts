@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkActionAuth } from '@/lib/actionAuth'
 
 export async function POST(request: NextRequest) {
+  const authError = checkActionAuth(request)
+  if (authError) return authError
+
   try {
     const body = await request.json()
     const { query, limit = 10 } = body

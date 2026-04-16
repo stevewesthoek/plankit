@@ -22,7 +22,6 @@ export async function GET() {
         }
       }
     },
-    security: [{ bearerAuth: [] }],
     paths: {
       '/api/tools/status': {
         post: {
@@ -253,6 +252,7 @@ export async function GET() {
           operationId: 'searchBrain',
           summary: 'ChatGPT Custom Action: Search local vault (read-only)',
           description: 'Search the connected local vault for files matching the query. This is a read-only action that does not modify any files. Returns relative file paths safe for use with the read action. Absolute paths and ../ traversal are blocked.',
+          security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
             content: {
@@ -302,6 +302,7 @@ export async function GET() {
           operationId: 'readBrainFile',
           summary: 'ChatGPT Custom Action: Read file from local vault (read-only)',
           description: 'Read the full content of a file from the local vault. This is a read-only action that does not modify any files. Only accepts relative paths returned by the search action. Absolute paths and ../ traversal are blocked for safety.',
+          security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
             content: {
@@ -352,6 +353,7 @@ export async function GET() {
           operationId: 'searchAndReadBrain',
           summary: 'ChatGPT Custom Action: Search and read files (read-only, combined)',
           description: 'Search and read the top N results in a single call. This is a read-only action that combines search and read operations for fewer confirmations. Limited to 3 results maximum. Does not modify any files. Absolute paths and ../ traversal are blocked.',
+          security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
             content: {
