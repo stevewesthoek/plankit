@@ -249,8 +249,8 @@ export async function GET() {
       },
       '/api/actions/search': {
         post: {
-          summary: 'ChatGPT Custom Action: Search local vault',
-          description: 'Search the connected local vault for files matching the query',
+          summary: 'ChatGPT Custom Action: Search local vault (read-only)',
+          description: 'Search the connected local vault for files matching the query. This is a read-only action that does not modify any files. Returns relative file paths safe for use with the read action. Absolute paths and ../ traversal are blocked.',
           requestBody: {
             required: true,
             content: {
@@ -279,7 +279,7 @@ export async function GET() {
                         items: {
                           type: 'object',
                           properties: {
-                            path: { type: 'string', description: 'File path in vault' },
+                            path: { type: 'string', description: 'Relative file path in vault (safe for read action)' },
                             title: { type: 'string', description: 'File title' },
                             score: { type: 'number', description: 'Relevance score' },
                             snippet: { type: 'string', description: 'File content preview' },
@@ -298,7 +298,7 @@ export async function GET() {
       '/api/actions/read': {
         post: {
           summary: 'ChatGPT Custom Action: Read file from local vault (read-only)',
-          description: 'Read the full content of a file from the local vault. Read-only action - no write operations supported.',
+          description: 'Read the full content of a file from the local vault. This is a read-only action that does not modify any files. Only accepts relative paths returned by the search action. Absolute paths and ../ traversal are blocked for safety.',
           requestBody: {
             required: true,
             content: {
@@ -307,7 +307,7 @@ export async function GET() {
                   type: 'object',
                   required: ['path'],
                   properties: {
-                    path: { type: 'string', description: 'Relative file path in vault (from search result)' }
+                    path: { type: 'string', description: 'Relative file path in vault (from search result only)' }
                   }
                 }
               }
@@ -336,6 +336,54 @@ export async function GET() {
                     type: 'object',
                     properties: {
                       error: { type: 'string', description: 'Error message' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/api/actions/search-and-read': {
+        post: {
+          summary: 'ChatGPT Custom Action: Search and read files (read-only, combined)',
+          description: 'Search and read the top N results in a single call. This is a read-only action that combines search and read operations for fewer confirmations. Limited to 3 results maximum. Does not modify any files. Absolute paths and ../ traversal are blocked.',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['query'],
+                  properties: {
+                    query: { type: 'string', description: 'Search query' },
+                    limit: { type: 'integer', default: 2, description: 'Maximum results to return (capped at 3)' }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Search results with file contents',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      results: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            path: { type: 'string', description: 'Relative file path in vault' },
+                            title: { type: 'string', description: 'File title' },
+                            snippet: { type: 'string', description: 'File content preview' },
+                            content: { type: 'string', description: 'Full file content' },
+                            modifiedAt: { type: 'string', description: 'Last modified timestamp' }
+                          }
+                        }
+                      }
                     }
                   }
                 }
