@@ -60,8 +60,8 @@ node dist/index.js serve
 ### Terminal 2: Start Web App
 
 ```bash
-cd ~/Repos/stevewesthoek/brain-bridge
-pnpm dev
+cd ~/Repos/stevewesthoek/brain-bridge/apps/web
+npm run dev
 ```
 
 **Output:**
