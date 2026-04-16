@@ -1,4 +1,4 @@
-import { loadConfig } from '../agent/config'
+import { loadConfig, getLocalPort } from '../agent/config'
 import { startLocalServer } from '../agent/server'
 import { BridgeClient } from '../agent/bridge-client'
 import { log, error } from '../utils/logger'
@@ -19,7 +19,8 @@ export async function serveCommand(): Promise<void> {
   try {
     // Start local HTTP server
     log('Starting local agent server...')
-    startLocalServer(3052)
+    const port = getLocalPort()
+    startLocalServer(port)
 
     // Connect to SaaS bridge if configured
     if (config.deviceToken) {
@@ -39,7 +40,7 @@ export async function serveCommand(): Promise<void> {
 
     log('')
     log('Brain Bridge agent is running!')
-    log('Local server: http://127.0.0.1:3052')
+    log(`Local server: http://127.0.0.1:${port}`)
     log('Press Ctrl+C to stop.')
 
     // Keep process alive

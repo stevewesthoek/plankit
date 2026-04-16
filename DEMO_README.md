@@ -172,6 +172,77 @@ Shows JSON entries for each operation:
 
 ---
 
+## Server Lifecycle
+
+### Running the Demo
+
+The demo script **keeps the server running** after tests complete. This allows for interactive testing:
+
+```bash
+bash DEMO_QUICK.sh
+```
+
+Output shows:
+```
+🚀 Starting local server on http://127.0.0.1:3052
+   (Registered in ProBot local-apps.json)
+
+✅ Testing Operations:
+...
+
+🔄 Server is still running (PID: 12345)
+   http://127.0.0.1:3052/api/search (and other endpoints)
+
+To test more, open another terminal and run:
+   curl -X POST http://127.0.0.1:3052/api/search ...
+
+To stop the server:
+   kill 12345
+```
+
+### Server Health Check
+
+While running, check server status:
+```bash
+curl http://127.0.0.1:3052/health | jq .
+```
+
+Response:
+```json
+{
+  "status": "ok",
+  "port": 3052,
+  "vaultPath": "/path/to/vault",
+  "indexedFiles": 2,
+  "version": "0.1.0"
+}
+```
+
+### Stop the Server
+
+From same terminal where it's running:
+```bash
+Ctrl+C
+```
+
+From a different terminal:
+```bash
+pkill -f "node dist/index.js serve"
+```
+
+Or use the exact PID shown in demo output:
+```bash
+kill 12345
+```
+
+### Restart the Server
+
+```bash
+pkill -f "node dist/index.js serve" && sleep 1 && cd ~/Repos/stevewesthoek/brain-bridge/packages/cli && node dist/index.js serve
+```
+
+---
+
 ## Clean Up
 
 Remove test data:

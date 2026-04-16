@@ -38,20 +38,51 @@ bash DEMO_QUICK.sh
 
 ## ✅ What Works Right Now
 
-| Feature | Status | Location |
-|---------|--------|----------|
-| CLI Commands | ✅ | `packages/cli/dist/` |
-| Local Search | ✅ | `/api/search` |
-| File Read | ✅ | `/api/read` |
-| File Create | ✅ | `/api/create` |
-| File Append | ✅ | `/api/append` |
-| Export Plans | ✅ | `/api/export-plan` |
-| Audit Logging | ✅ | `~/.brainbridge/audit.log` |
-| Path Security | ✅ | `permissions.ts` |
+| Feature | Status | Location | Port |
+|---------|--------|----------|------|
+| CLI Commands | ✅ | `packages/cli/dist/` | — |
+| Local Server | ✅ | Port 3052 | Registered in brain infra |
+| Local Search | ✅ | `/api/search` | 3052 |
+| File Read | ✅ | `/api/read` | 3052 |
+| File Create | ✅ | `/api/create` | 3052 |
+| File Append | ✅ | `/api/append` | 3052 |
+| Export Plans | ✅ | `/api/export-plan` | 3052 |
+| Audit Logging | ✅ | `~/.brainbridge/audit.log` | — |
+| Path Security | ✅ | `permissions.ts` | — |
 
 ---
 
 ## 🎯 Quick Commands
+
+### Server Lifecycle
+
+**Start:**
+```bash
+cd packages/cli
+node dist/index.js serve
+```
+
+**Server is running on:**
+```
+http://127.0.0.1:3052
+```
+
+**Check health:**
+```bash
+curl http://127.0.0.1:3052/health | jq .
+```
+
+**Stop the server:**
+```bash
+# In same terminal: Ctrl+C
+# From another terminal:
+pkill -f "node dist/index.js serve"
+```
+
+**Restart the server:**
+```bash
+pkill -f "node dist/index.js serve" && sleep 1 && node dist/index.js serve
+```
 
 ### Setup
 ```bash
@@ -65,7 +96,7 @@ node dist/index.js serve
 
 ### Test
 ```bash
-curl -X POST http://127.0.0.1:3001/api/search \
+curl -X POST http://127.0.0.1:3052/api/search \
   -H 'Content-Type: application/json' \
   -d '{"query": "test", "limit": 5}'
 ```

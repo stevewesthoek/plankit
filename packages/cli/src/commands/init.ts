@@ -19,6 +19,7 @@ export async function initCommand(): Promise<void> {
     deviceToken: '',
     apiBaseUrl: process.env.BRAIN_BRIDGE_API || 'http://localhost:3000',
     vaultPath: '',
+    localPort: 3052,
     mode: 'read_create_append',
     allowedExtensions: ['.md', '.txt'],
     ignorePatterns: ['.git/**', '.obsidian/**', 'node_modules/**', '.brainbridgeignore']

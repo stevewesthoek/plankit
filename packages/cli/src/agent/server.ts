@@ -4,12 +4,25 @@ import { VaultSearcher } from './search'
 import { readFile, createFile, appendFile, listFolder } from './vault'
 import { logToFile } from '../utils/logger'
 import { createExportPlan } from './export'
+import { loadConfig } from './config'
 
 export async function startLocalServer(port: number = 3001): Promise<void> {
   const fastify = Fastify({ logger: true })
 
   const indexer = new Indexer()
   let searcher = new VaultSearcher(indexer.getDocs())
+  const config = loadConfig()
+
+  // Health endpoint
+  fastify.get('/health', async (request, reply) => {
+    return {
+      status: 'ok',
+      port,
+      vaultPath: config?.vaultPath || 'not configured',
+      indexedFiles: indexer.getDocs().length,
+      version: '0.1.0'
+    }
+  })
 
   // Status endpoint
   fastify.post<{ Body: Record<string, unknown> }>('/api/status', async (request, reply) => {

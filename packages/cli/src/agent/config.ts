@@ -8,6 +8,7 @@ export interface AgentConfig {
   deviceToken: string
   apiBaseUrl: string
   vaultPath: string
+  localPort?: number
   mode: 'read_create_append'
   allowedExtensions: string[]
   ignorePatterns: string[]
@@ -45,4 +46,9 @@ export function getVaultPath(): string {
   }
 
   return expandTilde(config.vaultPath)
+}
+
+export function getLocalPort(): number {
+  const config = loadConfig()
+  return config?.localPort ?? 3052
 }
