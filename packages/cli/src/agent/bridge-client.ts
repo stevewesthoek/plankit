@@ -61,7 +61,7 @@ export class BridgeClient {
 
       debug(`Received tool call: ${message.tool}`)
 
-      let result: Record<string, unknown> | null = null
+      let result: Record<string, unknown> | undefined
       let error: string | undefined
 
       try {

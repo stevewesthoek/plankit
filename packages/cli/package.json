@@ -26,7 +26,6 @@
     "@types/node": "^20.0.0",
     "@types/commander": "^2.12.2",
     "@types/ws": "^8.5.5",
-    "@types/gray-matter": "^4.0.2",
     "typescript": "^5.0.0",
     "tsx": "^4.0.0"
   }

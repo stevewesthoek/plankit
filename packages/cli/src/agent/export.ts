@@ -11,7 +11,7 @@ interface ExportPlanInput {
 }
 
 export async function createExportPlan(input: Record<string, unknown>): Promise<{ path: string; created: boolean }> {
-  const data = input as ExportPlanInput
+  const data = input as unknown as ExportPlanInput
 
   const tasks = (data.tasks || []).map((t: string) => `- ${t}`).join('\n')
   const criteria = (data.acceptanceCriteria || []).map((c: string) => `- ${c}`).join('\n')
