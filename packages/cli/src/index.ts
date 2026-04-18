@@ -7,6 +7,10 @@ import { connectCommand } from './commands/connect'
 import { indexCommand } from './commands/index'
 import { serveCommand } from './commands/serve'
 import { statusCommand } from './commands/status'
+import { workspaceListCommand } from './commands/workspace'
+import { treeCommand } from './commands/tree'
+import { grepCommand } from './commands/grep'
+import { contextCommand } from './commands/context'
 
 const program = new Command()
 
@@ -41,5 +45,40 @@ program
   .command('status')
   .description('Show Brain Bridge status')
   .action(() => statusCommand())
+
+program
+  .command('workspace <action>')
+  .description('Manage workspaces')
+  .action((action) => {
+    if (action === 'list') {
+      workspaceListCommand()
+    } else {
+      console.error(`Unknown action: ${action}`)
+    }
+  })
+
+program
+  .command('tree <workspace> [path]')
+  .option('--depth <n>', 'Max depth', '3')
+  .description('List workspace tree')
+  .action((workspace, path, options) => {
+    treeCommand(workspace, path || '', parseInt(options.depth, 10))
+  })
+
+program
+  .command('grep <workspace> <pattern>')
+  .option('--max <n>', 'Max results', '50')
+  .description('Search workspace')
+  .action((workspace, pattern, options) => {
+    grepCommand(workspace, pattern, parseInt(options.max, 10))
+  })
+
+program
+  .command('context <workspace> [query]')
+  .option('--depth <n>', 'Max depth', '2')
+  .description('Assemble workspace context')
+  .action((workspace, query, options) => {
+    contextCommand(workspace, query || '', parseInt(options.depth, 10))
+  })
 
 program.parse()

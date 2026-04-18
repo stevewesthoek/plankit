@@ -62,3 +62,35 @@ export type User = {
   apiKey: string
   createdAt: string
 }
+
+export type Workspace = {
+  name: string
+  root: string
+  mode: 'read_only' | 'default'
+  includePatterns?: string[]
+  excludePatterns?: string[]
+}
+
+export type TreeNode = {
+  name: string
+  type: 'file' | 'directory'
+  path: string
+  size?: number
+  modifiedAt?: string
+}
+
+export type GrepMatch = {
+  file: string
+  line: number
+  content: string
+  context?: string
+}
+
+export type ContextAssembly = {
+  workspace: string
+  summary: string
+  tree: TreeNode[]
+  docs: SearchResult[]
+  entrypoints: string[]
+  keyFiles: FileContent[]
+}

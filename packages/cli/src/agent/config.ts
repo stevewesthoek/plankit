@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { getConfigPath, expandTilde } from '../utils/paths'
+import type { Workspace } from '@brainbridge/shared'
 
 export interface AgentConfig {
   userId: string
@@ -12,6 +13,7 @@ export interface AgentConfig {
   mode: 'read_create_append'
   allowedExtensions: string[]
   ignorePatterns: string[]
+  workspaces?: Workspace[]
 }
 
 export function loadConfig(): AgentConfig | null {
@@ -51,4 +53,28 @@ export function getVaultPath(): string {
 export function getLocalPort(): number {
   const config = loadConfig()
   return config?.localPort ?? 3052
+}
+
+export function getWorkspaces(): Workspace[] {
+  const config = loadConfig()
+  if (config?.workspaces && config.workspaces.length > 0) {
+    return config.workspaces
+  }
+
+  if (config?.vaultPath) {
+    return [
+      {
+        name: 'vault',
+        root: config.vaultPath,
+        mode: 'default'
+      }
+    ]
+  }
+
+  return []
+}
+
+export function getWorkspace(name: string): Workspace | null {
+  const workspaces = getWorkspaces()
+  return workspaces.find(ws => ws.name === name) ?? null
 }

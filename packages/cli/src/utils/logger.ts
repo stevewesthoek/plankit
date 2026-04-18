@@ -6,8 +6,9 @@ export interface LogEntry {
   timestamp: string
   tool: string
   path?: string
-  status: 'success' | 'error'
+  status: 'success' | 'error' | 'skip'
   error?: string
+  [key: string]: unknown
 }
 
 export function logToFile(entry: LogEntry): void {
