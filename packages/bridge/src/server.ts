@@ -1,6 +1,11 @@
 import http from 'http'
 import WebSocket from 'ws'
 import { logToFile } from './logger'
+import * as deviceRegistry from './storage/device-registry'
+import * as tokenStore from './storage/token-store'
+import * as requestAudit from './storage/request-audit'
+import { handleAdminDevices, handleAdminRequests, setDeviceMap } from './admin/endpoints'
+import type { PersistedDevice } from './storage/types'
 
 const PORT = parseInt(process.env.BRIDGE_PORT || '3053', 10)
 const HEARTBEAT_INTERVAL = 30000
@@ -19,13 +24,10 @@ interface PendingRequest {
   timeout: NodeJS.Timeout
 }
 
-// Device registry and pending requests
+// Device registry (in-memory during operation, persisted to disk)
 const devices = new Map<string, DeviceConnection>()
 const pendingRequests = new Map<string, PendingRequest>()
 let requestIdCounter = 0
-
-// Hardcoded device token whitelist for MVP
-const ALLOWED_TOKENS = new Set(['dev-token-1', 'dev-token-2', 'local-device'])
 
 // Helper to generate request ID
 function generateRequestId(): string {
@@ -42,6 +44,18 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(200)
     res.end()
+    return
+  }
+
+  // Admin: list devices (persisted + connected status)
+  if (req.method === 'GET' && req.url === '/api/admin/devices') {
+    handleAdminDevices(req, res)
+    return
+  }
+
+  // Admin: list request audit records
+  if (req.method === 'GET' && req.url?.startsWith('/api/admin/requests')) {
+    handleAdminRequests(req, res)
     return
   }
 
@@ -67,44 +81,90 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // Device registration endpoint
+  // Device registration endpoint: register new device with new token
   if (req.method === 'POST' && req.url === '/api/register') {
     let body = ''
     req.on('data', chunk => { body += chunk.toString() })
-    req.on('end', () => {
+    req.on('end', async () => {
       try {
         const payload = JSON.parse(body)
-        const { deviceToken } = payload
+        const { deviceToken, deviceId: requestedDeviceId } = payload
 
-        if (!ALLOWED_TOKENS.has(deviceToken)) {
-          res.writeHead(401)
-          res.end(JSON.stringify({ error: 'Invalid device token' }))
+        if (!deviceToken) {
+          res.writeHead(400)
+          res.end(JSON.stringify({ error: 'Missing deviceToken' }))
+          return
+        }
+
+        // Check if token already exists
+        const existingDeviceId = tokenStore.validateToken(deviceToken)
+        if (existingDeviceId) {
+          res.writeHead(409)
+          res.end(JSON.stringify({ error: 'Token already registered', deviceId: existingDeviceId }))
           logToFile({
             timestamp: new Date().toISOString(),
             tool: 'relay_register',
             status: 'error',
-            reason: 'invalid_token'
+            reason: 'token_already_exists'
           })
           return
         }
 
-        res.writeHead(200)
+        // Generate or use requested deviceId
+        const deviceId = requestedDeviceId || `device-${Date.now()}`
+
+        // Check if deviceId already exists
+        if (deviceRegistry.findDevice(deviceId)) {
+          res.writeHead(409)
+          res.end(JSON.stringify({ error: 'Device ID already exists', deviceId }))
+          logToFile({
+            timestamp: new Date().toISOString(),
+            tool: 'relay_register',
+            status: 'error',
+            reason: 'device_id_exists'
+          })
+          return
+        }
+
+        // Register new token
+        tokenStore.registerNewToken(deviceToken, deviceId)
+
+        // Create persisted device record (not connected yet)
+        const now = new Date().toISOString()
+        const crypto = await import('crypto')
+        const tokenHash = crypto.createHash('sha256').update(deviceToken).digest('hex')
+
+        const persistedDevice: PersistedDevice = {
+          deviceId,
+          tokenHash,
+          createdAt: now,
+          lastSeenAt: now,
+          version: 1
+        }
+        deviceRegistry.saveDevice(persistedDevice)
+
+        res.writeHead(201)
         res.end(JSON.stringify({
           status: 'ok',
-          message: 'Device registered. Connect to WebSocket at ws://127.0.0.1:' + PORT,
-          wsUrl: `ws://127.0.0.1:${PORT}`,
-          deviceToken
+          deviceId,
+          message: 'Device registered. Use the connection info below. Client will append /api/bridge/ws to wsUrl.',
+          connectionInfo: {
+            wsUrl: `ws://127.0.0.1:${PORT}`,
+            token: deviceToken,
+            deviceId,
+            usage: 'Connect with: BRIDGE_URL=<wsUrl> DEVICE_TOKEN=<token> node packages/cli/dist/index.js serve'
+          }
         }))
 
         logToFile({
           timestamp: new Date().toISOString(),
           tool: 'relay_register',
           status: 'success',
-          deviceToken
+          deviceId
         })
       } catch (err) {
         res.writeHead(400)
-        res.end(JSON.stringify({ error: 'Invalid request' }))
+        res.end(JSON.stringify({ error: `Invalid request: ${String(err)}` }))
       }
     })
     return
@@ -156,14 +216,39 @@ const server = http.createServer(async (req, res) => {
 
         // Generate request ID for correlation
         const requestId = generateRequestId()
+        const startTime = Date.now()
         let timedOut = false
+
+        // Log request start
+        requestAudit.logRequest({
+          requestId,
+          deviceId,
+          command,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          version: 1
+        })
 
         // Create pending request with timeout
         const timeout = setTimeout(() => {
           timedOut = true
           pendingRequests.delete(requestId)
+          const duration = Date.now() - startTime
           res.writeHead(504)
           res.end(JSON.stringify({ error: 'Command timeout' }))
+
+          // Log timeout
+          requestAudit.logRequest({
+            requestId,
+            deviceId,
+            command,
+            status: 'timeout',
+            createdAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            duration,
+            version: 1
+          })
+
           logToFile({
             timestamp: new Date().toISOString(),
             tool: 'relay_command',
@@ -180,8 +265,22 @@ const server = http.createServer(async (req, res) => {
             if (timedOut) return
             clearTimeout(timeout)
             pendingRequests.delete(requestId)
+            const duration = Date.now() - startTime
             res.writeHead(200)
             res.end(JSON.stringify({ status: 'ok', result }))
+
+            // Log success
+            requestAudit.logRequest({
+              requestId,
+              deviceId,
+              command,
+              status: 'success',
+              createdAt: new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+              duration,
+              version: 1
+            })
+
             logToFile({
               timestamp: new Date().toISOString(),
               tool: 'relay_command',
@@ -195,8 +294,23 @@ const server = http.createServer(async (req, res) => {
             if (timedOut) return
             clearTimeout(timeout)
             pendingRequests.delete(requestId)
+            const duration = Date.now() - startTime
             res.writeHead(500)
             res.end(JSON.stringify({ error: String(error) }))
+
+            // Log error
+            requestAudit.logRequest({
+              requestId,
+              deviceId,
+              command,
+              status: 'error',
+              createdAt: new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+              duration,
+              error: String(error),
+              version: 1
+            })
+
             logToFile({
               timestamp: new Date().toISOString(),
               tool: 'relay_command',
@@ -244,7 +358,8 @@ wss.on('connection', (ws: WebSocket) => {
       // Device authentication
       if (message.type === 'auth') {
         const token = message.deviceToken
-        if (!ALLOWED_TOKENS.has(token)) {
+        const validatedDeviceId = tokenStore.validateToken(token)
+        if (!validatedDeviceId) {
           ws.send(JSON.stringify({
             type: 'auth_response',
             status: 'error',
@@ -254,8 +369,19 @@ wss.on('connection', (ws: WebSocket) => {
           return
         }
 
-        deviceId = token || `device-${Date.now()}`
+        deviceId = validatedDeviceId
         const now = new Date()
+
+        // Check if device already exists (reconnection)
+        const existingDevice = devices.get(deviceId)
+        if (existingDevice) {
+          // Close old WebSocket gracefully
+          console.log(`[Bridge] Device ${deviceId} reconnecting, replacing stale connection`)
+          existingDevice.ws.close()
+          devices.delete(deviceId)
+        }
+
+        // Store new connection
         devices.set(deviceId, {
           ws,
           deviceId,
@@ -263,6 +389,26 @@ wss.on('connection', (ws: WebSocket) => {
           lastSeen: now,
           lastHeartbeat: now
         })
+
+        // Persist device record (update lastSeenAt and connectedAt)
+        const existingRecord = deviceRegistry.findDevice(deviceId)
+        if (!existingRecord) {
+          // New device (shouldn't happen if registered via /api/register, but handle it)
+          const crypto = await import('crypto')
+          const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
+          const persistedDevice: PersistedDevice = {
+            deviceId,
+            tokenHash,
+            createdAt: now.toISOString(),
+            lastSeenAt: now.toISOString(),
+            connectedAt: now.toISOString(),
+            version: 1
+          }
+          deviceRegistry.saveDevice(persistedDevice)
+        } else {
+          // Existing device, update lastSeenAt
+          deviceRegistry.updateLastSeen(deviceId)
+        }
 
         ws.send(JSON.stringify({
           type: 'auth_response',
@@ -286,7 +432,8 @@ wss.on('connection', (ws: WebSocket) => {
           const device = devices.get(deviceId)
           if (device) {
             device.lastHeartbeat = new Date()
-            device.status = 'online'
+            // Update lastSeenAt metadata
+            deviceRegistry.updateLastSeen(deviceId)
           }
         }
         return
@@ -329,6 +476,8 @@ wss.on('connection', (ws: WebSocket) => {
   ws.on('close', () => {
     if (deviceId) {
       devices.delete(deviceId)
+      // Update lastSeenAt but do not persist status (runtime only)
+      deviceRegistry.updateLastSeen(deviceId)
       console.log(`[Bridge] Device disconnected: ${deviceId}`)
       logToFile({
         timestamp: new Date().toISOString(),
@@ -351,14 +500,23 @@ setInterval(() => {
     if (device.ws.readyState === WebSocket.OPEN) {
       device.ws.send(JSON.stringify({ type: 'ping' }))
 
-      // Mark as offline if no pong within timeout window
+      // Detect stale connections (no pong within timeout window)
       const timeSinceHeartbeat = now.getTime() - device.lastHeartbeat.getTime()
       if (timeSinceHeartbeat > 60000) {
-        device.status = 'offline'
+        // Device is unresponsive, close it (will trigger ws.on('close'))
+        device.ws.close()
       }
     }
   })
 }, HEARTBEAT_INTERVAL)
+
+// Load persisted state on startup
+console.log('[Bridge] Loading persisted state...')
+deviceRegistry.loadDevices()
+tokenStore.loadTokens()
+requestAudit.loadRequests()
+setDeviceMap(devices)
+console.log('[Bridge] Persisted state loaded')
 
 // Start server
 server.listen(PORT, '127.0.0.1', () => {
@@ -367,6 +525,8 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`[Bridge] Health: GET http://127.0.0.1:${PORT}/health`)
   console.log(`[Bridge] Register: POST http://127.0.0.1:${PORT}/api/register`)
   console.log(`[Bridge] Commands: POST http://127.0.0.1:${PORT}/api/commands`)
+  console.log(`[Bridge] Admin: GET http://127.0.0.1:${PORT}/api/admin/devices`)
+  console.log(`[Bridge] Admin: GET http://127.0.0.1:${PORT}/api/admin/requests`)
 })
 
 export { devices }
