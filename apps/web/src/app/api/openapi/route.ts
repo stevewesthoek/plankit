@@ -6,7 +6,7 @@ export async function GET() {
     info: {
       title: 'Brain Bridge API',
       version: '1.0.0',
-      description: 'Connect your local brain folder to ChatGPT'
+      description: 'Search and read across connected knowledge sources through ChatGPT Custom Actions'
     },
     servers: [
       {
@@ -250,8 +250,8 @@ export async function GET() {
       '/api/actions/search': {
         post: {
           operationId: 'searchBrain',
-          summary: 'ChatGPT Custom Action: Search local vault (read-only)',
-          description: 'Search the connected local vault for files matching the query. This is a read-only action that does not modify any files. Returns relative file paths safe for use with the read action. Absolute paths and ../ traversal are blocked.',
+          summary: 'ChatGPT Custom Action: Search connected knowledge sources (read-only)',
+          description: 'Search across all connected knowledge sources for files matching the query. Results include the source identifier (sourceId) indicating which knowledge source each file came from. This is a read-only action that does not modify any files. Returns relative file paths safe for use with the read action. Absolute paths and ../ traversal are blocked.',
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -281,7 +281,8 @@ export async function GET() {
                         items: {
                           type: 'object',
                           properties: {
-                            path: { type: 'string', description: 'Relative file path in vault (safe for read action)' },
+                            sourceId: { type: 'string', description: 'Source identifier (knowledge source where this file was found)' },
+                            path: { type: 'string', description: 'Relative file path (safe for read action)' },
                             title: { type: 'string', description: 'File title' },
                             score: { type: 'number', description: 'Relevance score' },
                             snippet: { type: 'string', description: 'File content preview' },
@@ -300,8 +301,8 @@ export async function GET() {
       '/api/actions/read': {
         post: {
           operationId: 'readBrainFile',
-          summary: 'ChatGPT Custom Action: Read file from local vault (read-only)',
-          description: 'Read the full content of a file from the local vault. This is a read-only action that does not modify any files. Only accepts relative paths returned by the search action. Absolute paths and ../ traversal are blocked for safety.',
+          summary: 'ChatGPT Custom Action: Read file from knowledge sources (read-only)',
+          description: 'Read the full content of a file from the connected knowledge sources. This is a read-only action that does not modify any files. Only accepts relative paths returned by the search action. Absolute paths and ../ traversal are blocked for safety.',
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -351,8 +352,8 @@ export async function GET() {
       '/api/actions/search-and-read': {
         post: {
           operationId: 'searchAndReadBrain',
-          summary: 'ChatGPT Custom Action: Search and read files (read-only, combined)',
-          description: 'Search and read the top N results in a single call. This is a read-only action that combines search and read operations for fewer confirmations. Limited to 3 results maximum. Does not modify any files. Absolute paths and ../ traversal are blocked.',
+          summary: 'ChatGPT Custom Action: Search and read knowledge sources (read-only, combined)',
+          description: 'Search across all connected knowledge sources and read the top results in a single call. This is a read-only action that combines search and read operations for fewer confirmations. Limited to 3 results maximum. Does not modify any files. Absolute paths and ../ traversal are blocked.',
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -382,7 +383,8 @@ export async function GET() {
                         items: {
                           type: 'object',
                           properties: {
-                            path: { type: 'string', description: 'Relative file path in vault' },
+                            sourceId: { type: 'string', description: 'Source identifier (knowledge source where this file was found)' },
+                            path: { type: 'string', description: 'Relative file path' },
                             title: { type: 'string', description: 'File title' },
                             snippet: { type: 'string', description: 'File content preview' },
                             content: { type: 'string', description: 'Full file content' },
@@ -402,7 +404,7 @@ export async function GET() {
         post: {
           operationId: 'appendInboxNote',
           summary: 'ChatGPT Custom Action: Create a new personal inbox note',
-          description: 'Create a new markdown note in the personal Mind vault inbox (01-inbox folder). This action only allows writing to mind/01-inbox/ folder and never overwrites existing files. Filenames are auto-generated with timestamp to prevent collisions. The title is slugified for safe filename creation.',
+          description: 'Create a new markdown note in the personal inbox (01-inbox folder in the personal knowledge source). This action only allows writing to the inbox folder and never overwrites existing files. Filenames are auto-generated with timestamp to prevent collisions. The title is slugified for safe filename creation.',
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
