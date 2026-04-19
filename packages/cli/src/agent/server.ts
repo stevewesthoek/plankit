@@ -13,6 +13,14 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
   const fastify = Fastify({ logger: true })
 
   const indexer = new Indexer()
+
+  // Build index if empty
+  if (indexer.getDocs().length === 0) {
+    console.log('[Indexer] Building index on startup...')
+    await indexer.buildIndex()
+    console.log(`[Indexer] Built index with ${indexer.getDocs().length} files`)
+  }
+
   let searcher = new VaultSearcher(indexer.getDocs())
   const config = loadConfig()
 
