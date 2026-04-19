@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc",
     "type-check": "tsc --noEmit",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts serve"
   },
   "dependencies": {
     "@brainbridge/shared": "workspace:*",

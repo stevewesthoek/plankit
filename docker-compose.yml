@@ -1,0 +1,30 @@
+services:
+  relay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: brainbridge-relay
+    ports:
+      - "3053:3053"
+    env_file:
+      # PRODUCTION: export RELAY_ENV_FILE=~/.config/brain-bridge/.env.relay && docker compose up -d
+      # DEV ONLY: docker compose up -d (uses committed template with no real secrets)
+      - ${RELAY_ENV_FILE:-packages/bridge/.env.relay}
+    environment:
+      BRIDGE_PORT: 3053
+      RELAY_DATA_DIR: /var/lib/brainbridge
+      NODE_ENV: production
+    volumes:
+      # Persist state across container restarts
+      - brainbridge-data:/var/lib/brainbridge
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); http.get('http://localhost:3053/ready', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  brainbridge-data:
+    driver: local

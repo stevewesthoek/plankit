@@ -1,10 +1,17 @@
 import fs from 'fs'
 import path from 'path'
-import os from 'os'
 import crypto from 'crypto'
 import type { SessionRecord } from './types'
+import { getDataPath } from './data-dir'
 
-const SESSIONS_LOG = path.join(os.homedir(), '.brainbridge', 'relay-sessions.log')
+let SESSIONS_LOG = ''
+
+function initFile(): string {
+  if (!SESSIONS_LOG) {
+    SESSIONS_LOG = getDataPath('relay-sessions.log')
+  }
+  return SESSIONS_LOG
+}
 
 let sessionMap = new Map<string, SessionRecord>()
 const SESSION_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
@@ -15,7 +22,7 @@ function generateSessionId(): string {
 }
 
 function ensureDir(): void {
-  const dir = path.dirname(SESSIONS_LOG)
+  const dir = path.dirname(initFile())
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
   }
@@ -146,7 +153,7 @@ function logSessionEvent(
       ...extra
     }
     const line = JSON.stringify(entry) + '\n'
-    fs.appendFileSync(SESSIONS_LOG, line)
+    fs.appendFileSync(initFile(), line)
   } catch (err) {
     console.error('[SessionStore] Failed to write session log:', err)
   }

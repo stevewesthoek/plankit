@@ -1,14 +1,21 @@
 import fs from 'fs'
 import path from 'path'
-import os from 'os'
 import type { PersistedDevice } from './types'
+import { getDataPath } from './data-dir'
 
-const DEVICES_FILE = path.join(os.homedir(), '.brainbridge', 'relay-devices.json')
+let DEVICES_FILE = ''
+
+function initFile(): string {
+  if (!DEVICES_FILE) {
+    DEVICES_FILE = getDataPath('relay-devices.json')
+  }
+  return DEVICES_FILE
+}
 
 let deviceRegistry: PersistedDevice[] = []
 
 function ensureDir(): void {
-  const dir = path.dirname(DEVICES_FILE)
+  const dir = path.dirname(initFile())
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
   }
@@ -16,11 +23,12 @@ function ensureDir(): void {
 
 function loadFromDisk(): PersistedDevice[] {
   ensureDir()
-  if (!fs.existsSync(DEVICES_FILE)) {
+  const file = initFile()
+  if (!fs.existsSync(file)) {
     return []
   }
   try {
-    const content = fs.readFileSync(DEVICES_FILE, 'utf-8')
+    const content = fs.readFileSync(file, 'utf-8')
     const data = JSON.parse(content)
     return Array.isArray(data) ? data : []
   } catch (err) {
@@ -32,7 +40,7 @@ function loadFromDisk(): PersistedDevice[] {
 function saveToDisk(): void {
   ensureDir()
   try {
-    fs.writeFileSync(DEVICES_FILE, JSON.stringify(deviceRegistry, null, 2))
+    fs.writeFileSync(initFile(), JSON.stringify(deviceRegistry, null, 2))
   } catch (err) {
     console.error(`Failed to save devices: ${err}`)
   }

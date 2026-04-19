@@ -1,19 +1,26 @@
 import fs from 'fs'
 import path from 'path'
-import os from 'os'
 import crypto from 'crypto'
 import type { TokenRecord } from './types'
+import { getDataPath } from './data-dir'
 
 function generateTokenId(): string {
   return `tok_${crypto.randomBytes(12).toString('hex')}`
 }
 
-const TOKENS_FILE = path.join(os.homedir(), '.brainbridge', 'relay-tokens.json')
+let TOKENS_FILE = ''
+
+function initFile(): string {
+  if (!TOKENS_FILE) {
+    TOKENS_FILE = getDataPath('relay-tokens.json')
+  }
+  return TOKENS_FILE
+}
 
 let tokenRegistry: TokenRecord[] = []
 
 function ensureDir(): void {
-  const dir = path.dirname(TOKENS_FILE)
+  const dir = path.dirname(initFile())
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
   }
@@ -25,11 +32,11 @@ function hashToken(plaintext: string): string {
 
 function loadFromDisk(): TokenRecord[] {
   ensureDir()
-  if (!fs.existsSync(TOKENS_FILE)) {
+  if (!fs.existsSync(initFile())) {
     return []
   }
   try {
-    const content = fs.readFileSync(TOKENS_FILE, 'utf-8')
+    const content = fs.readFileSync(initFile(), 'utf-8')
     const data = JSON.parse(content)
     return Array.isArray(data) ? data : []
   } catch (err) {
@@ -41,7 +48,7 @@ function loadFromDisk(): TokenRecord[] {
 function saveToDisk(): void {
   ensureDir()
   try {
-    fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokenRegistry, null, 2))
+    fs.writeFileSync(initFile(), JSON.stringify(tokenRegistry, null, 2))
   } catch (err) {
     console.error(`Failed to save tokens: ${err}`)
   }

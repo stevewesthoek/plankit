@@ -1,15 +1,22 @@
 import fs from 'fs'
 import path from 'path'
-import os from 'os'
 import type { RequestRecord } from './types'
+import { getDataPath } from './data-dir'
 
-const REQUESTS_FILE = path.join(os.homedir(), '.brainbridge', 'relay-requests.json')
+let REQUESTS_FILE = ''
+
+function initFile(): string {
+  if (!REQUESTS_FILE) {
+    REQUESTS_FILE = getDataPath('relay-requests.json')
+  }
+  return REQUESTS_FILE
+}
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
 
 let requestLog: RequestRecord[] = []
 
 function ensureDir(): void {
-  const dir = path.dirname(REQUESTS_FILE)
+  const dir = path.dirname(initFile())
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
   }
@@ -17,11 +24,11 @@ function ensureDir(): void {
 
 function loadFromDisk(): RequestRecord[] {
   ensureDir()
-  if (!fs.existsSync(REQUESTS_FILE)) {
+  if (!fs.existsSync(initFile())) {
     return []
   }
   try {
-    const content = fs.readFileSync(REQUESTS_FILE, 'utf-8')
+    const content = fs.readFileSync(initFile(), 'utf-8')
     const data = JSON.parse(content)
     return Array.isArray(data) ? data : []
   } catch (err) {
@@ -34,10 +41,10 @@ function saveToDisk(): void {
   ensureDir()
   try {
     const content = JSON.stringify(requestLog, null, 2)
-    fs.writeFileSync(REQUESTS_FILE, content)
+    fs.writeFileSync(initFile(), content)
 
     // Check size and rotate if needed
-    const stats = fs.statSync(REQUESTS_FILE)
+    const stats = fs.statSync(initFile())
     if (stats.size > MAX_FILE_SIZE) {
       rotateLog()
     }
@@ -51,13 +58,12 @@ function rotateLog(): void {
   try {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const archivePath = path.join(
-      os.homedir(),
-      '.brainbridge',
+      path.dirname(initFile()),
       `relay-requests-archive-${timestamp}.json`
     )
-    fs.copyFileSync(REQUESTS_FILE, archivePath)
+    fs.copyFileSync(initFile(), archivePath)
     requestLog = []
-    fs.writeFileSync(REQUESTS_FILE, JSON.stringify([], null, 2))
+    fs.writeFileSync(initFile(), JSON.stringify([], null, 2))
     console.log(`[RequestAudit] Rotated log to ${archivePath}`)
   } catch (err) {
     console.error(`Failed to rotate request log: ${err}`)

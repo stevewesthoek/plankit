@@ -5,7 +5,7 @@ import os from 'os'
 interface LogEntry {
   timestamp: string
   tool: string
-  status: 'success' | 'error'
+  status: 'success' | 'error' | 'ready' | 'ok'
   [key: string]: unknown
 }
 

@@ -1,5 +1,8 @@
 import http from 'http'
 import WebSocket from 'ws'
+import fs from 'fs'
+import path from 'path'
+import crypto from 'crypto'
 import { logToFile } from './logger'
 import * as deviceRegistry from './storage/device-registry'
 import * as tokenStore from './storage/token-store'
@@ -8,13 +11,13 @@ import * as sessionStore from './storage/session-store'
 import { handleAdminDevices, handleAdminRequests, setDeviceMap } from './admin/endpoints'
 import { handleCreateSession, handleGetSession, handleListSessions, handleCloseSession } from './admin/session-endpoints'
 import type { PersistedDevice } from './storage/types'
+import { startup, type StartupResult } from './startup'
 
-const PORT = parseInt(process.env.BRIDGE_PORT || '3053', 10)
+let runtimeConfig: StartupResult | null = null
 const HEARTBEAT_INTERVAL = 30000
-const RELAY_ADMIN_TOKEN = process.env.RELAY_ADMIN_TOKEN
 
 function requireAdminAuth(req: http.IncomingMessage, res: http.ServerResponse): boolean {
-  if (!RELAY_ADMIN_TOKEN) {
+  if (!runtimeConfig?.config.relayAdminToken) {
     // No admin token set, allow access (dev mode)
     return true
   }
@@ -33,7 +36,7 @@ function requireAdminAuth(req: http.IncomingMessage, res: http.ServerResponse): 
   }
 
   const token = authHeader.slice(7)
-  if (token !== RELAY_ADMIN_TOKEN) {
+  if (token !== runtimeConfig?.config.relayAdminToken) {
     res.writeHead(403)
     res.end(JSON.stringify({ error: 'Invalid admin token' }))
     logToFile({
@@ -141,7 +144,7 @@ const server = http.createServer(async (req, res) => {
     const status = {
       status: 'ok',
       bridgeRunning: true,
-      port: PORT,
+      port: runtimeConfig?.config.bridgePort,
       connectedDevices: connectedDevices.length,
       devices: Array.from(connectedDevices).map(d => ({
         id: d.deviceId,
@@ -153,6 +156,28 @@ const server = http.createServer(async (req, res) => {
 
     res.writeHead(200)
     res.end(JSON.stringify(status, null, 2))
+    return
+  }
+
+  // Readiness endpoint
+  if (req.method === 'GET' && req.url === '/ready') {
+    if (!runtimeConfig?.readyForTraffic) {
+      res.writeHead(503)
+      res.end(JSON.stringify({ ready: false, reason: 'startup_incomplete' }))
+      return
+    }
+
+    // Test data directory is still writable
+    const testFile = path.join(runtimeConfig.config.dataDir, `.ready-test-${crypto.randomBytes(4).toString('hex')}`)
+    try {
+      fs.writeFileSync(testFile, 'ready-check', { mode: 0o600 })
+      fs.unlinkSync(testFile)
+      res.writeHead(200)
+      res.end(JSON.stringify({ ready: true, dataDir: runtimeConfig.config.dataDir }))
+    } catch (err) {
+      res.writeHead(503)
+      res.end(JSON.stringify({ ready: false, reason: 'data_dir_not_writable' }))
+    }
     return
   }
 
@@ -224,7 +249,7 @@ const server = http.createServer(async (req, res) => {
           deviceId,
           message: 'Device registered. Use the connection info below. Client will append /api/bridge/ws to wsUrl.',
           connectionInfo: {
-            wsUrl: `ws://127.0.0.1:${PORT}`,
+            wsUrl: `ws://127.0.0.1:${runtimeConfig?.config.bridgePort}`,
             token: deviceToken,
             deviceId,
             usage: 'Connect with: BRIDGE_URL=<wsUrl> DEVICE_TOKEN=<token> node packages/cli/dist/index.js serve'
@@ -736,20 +761,21 @@ setInterval(() => {
   }
 }, 60000) // Every 60 seconds
 
-// Startup validation
-function validateStartup(): void {
-  console.log('[Bridge] Startup validation...')
+// Start server with startup validation
+startup().then(result => {
+  runtimeConfig = result
+  const PORT = result.config.bridgePort
 
-  // Check PORT validity
-  if (PORT < 1024 || PORT > 65535) {
-    console.error(`[Bridge] ERROR: Invalid BRIDGE_PORT ${PORT} (must be 1024-65535)`)
-    process.exit(1)
-  }
-  console.log(`[Bridge] ✓ Port ${PORT} is valid`)
+  // Load persisted state after validation
+  console.log('[Bridge] Loading persisted state...')
+  deviceRegistry.loadDevices()
+  tokenStore.loadTokens()
+  requestAudit.loadRequests()
+  setDeviceMap(devices)
+  console.log('[Bridge] Persisted state loaded')
 
   // Check if default tokens are enabled
-  const defaultsEnabled = process.env.RELAY_ENABLE_DEFAULT_TOKENS !== 'false'
-  if (defaultsEnabled) {
+  if (result.config.enableDefaultTokens) {
     console.warn('[Bridge] ⚠ Default development tokens are ENABLED')
     console.warn('[Bridge]   For production, set: RELAY_ENABLE_DEFAULT_TOKENS=false')
   } else {
@@ -757,34 +783,27 @@ function validateStartup(): void {
   }
 
   // Check if admin auth is configured
-  if (RELAY_ADMIN_TOKEN) {
+  if (result.config.relayAdminToken) {
     console.log('[Bridge] ✓ Admin endpoint authentication enabled')
   } else {
     console.warn('[Bridge] ⚠ Admin endpoints have NO authentication')
     console.warn('[Bridge]   For production, set: RELAY_ADMIN_TOKEN=<secret>')
   }
 
-  console.log('[Bridge] Startup validation complete')
-}
-
-// Load persisted state on startup
-console.log('[Bridge] Loading persisted state...')
-validateStartup()
-deviceRegistry.loadDevices()
-tokenStore.loadTokens()
-requestAudit.loadRequests()
-setDeviceMap(devices)
-console.log('[Bridge] Persisted state loaded')
-
-// Start server
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`[Bridge] Relay running on http://127.0.0.1:${PORT}`)
-  console.log(`[Bridge] WebSocket: ws://127.0.0.1:${PORT}`)
-  console.log(`[Bridge] Health: GET http://127.0.0.1:${PORT}/health`)
-  console.log(`[Bridge] Register: POST http://127.0.0.1:${PORT}/api/register`)
-  console.log(`[Bridge] Commands: POST http://127.0.0.1:${PORT}/api/commands`)
-  console.log(`[Bridge] Admin: GET http://127.0.0.1:${PORT}/api/admin/devices`)
-  console.log(`[Bridge] Admin: GET http://127.0.0.1:${PORT}/api/admin/requests`)
+  // Start listening (0.0.0.0 for container access from host)
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Bridge] Relay running on http://localhost:${PORT}`)
+    console.log(`[Bridge] WebSocket: ws://localhost:${PORT}`)
+    console.log(`[Bridge] Health: GET http://localhost:${PORT}/health`)
+    console.log(`[Bridge] Ready: GET http://localhost:${PORT}/ready`)
+    console.log(`[Bridge] Register: POST http://localhost:${PORT}/api/register`)
+    console.log(`[Bridge] Commands: POST http://127.0.0.1:${PORT}/api/commands`)
+    console.log(`[Bridge] Admin: GET http://127.0.0.1:${PORT}/api/admin/devices`)
+    console.log(`[Bridge] Admin: GET http://127.0.0.1:${PORT}/api/admin/requests`)
+  })
+}).catch(err => {
+  console.error('[Bridge] Startup failed:', err)
+  process.exit(1)
 })
 
 export { devices }
