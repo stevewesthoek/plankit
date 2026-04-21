@@ -28,7 +28,7 @@ Repo-specific instructions and durable context for Claude Code.
 - `apps/web/` — Next.js web app with API routes
 - `apps/web/src/app/api/actions/` — ChatGPT Custom Actions (read-only)
 - `apps/web/src/app/api/tools/` — Internal tools (not exposed to ChatGPT)
-- `docs/openapi.chatgpt.json` — Static OpenAPI for ChatGPT import
+- `docs/openapi.chatgpt.json` — Static OpenAPI export kept in sync with the live `/api/openapi` route
 - `packages/shared/` — Shared types
 - `packages/cli/` — CLI agent
 - `mind/` — **Symlink** to Mind repo (Obsidian vault); write personal notes here
@@ -70,7 +70,7 @@ curl -s -X POST https://brainbridge.prochat.tools/api/actions/search \
 ## Integrations
 
 - **Cloudflare**: `brainbridge.prochat.tools` public hostname (tunnel only, not in repo)
-- **ChatGPT Custom GPT**: Imports docs/openapi.chatgpt.json for Custom Actions
+- **ChatGPT Custom GPT**: Imports the live `/api/openapi` schema or the synced `docs/openapi.chatgpt.json` export for Custom Actions
 - **Local brain CLI**: Agent on port 3052 (separate repo, separate install)
 - **Relay server**: Port 3053 (bridges web ↔ agent)
 

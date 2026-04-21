@@ -77,7 +77,7 @@ export LOCAL_AGENT_URL="http://127.0.0.1:3052"
 ### 4. Set Up ChatGPT Custom GPT
 
 1. Create a new **Custom GPT** in ChatGPT
-2. Import the OpenAPI schema from `docs/openapi.chatgpt.json`
+2. Import the OpenAPI schema from `https://brainbridge.prochat.tools/api/openapi` or the synced local export in `docs/openapi.chatgpt.json`
 3. Set authentication to **Bearer token**, using your `BRAIN_BRIDGE_ACTION_TOKEN`
 4. Save and test with: _"Search my brain for notes on [topic]"_
 
@@ -214,9 +214,9 @@ See `DEPLOYMENT.md` for complete configuration reference.
 ### Import OpenAPI Schema
 
 1. Go to ChatGPT and create a new **Custom GPT**
-2. In the Custom GPT editor, upload or paste `docs/openapi.chatgpt.json`
+2. In the Custom GPT editor, import the live OpenAPI schema from `https://brainbridge.prochat.tools/api/openapi` or paste the synced local export in `docs/openapi.chatgpt.json`
 3. Set authentication to **Bearer token**, using your `BRAIN_BRIDGE_ACTION_TOKEN`
-4. Test with a simple prompt: _"Search my brain for research notes"_
+4. Test with a simple prompt: _"Get Brain Bridge status"_
 
 ### Available Actions
 

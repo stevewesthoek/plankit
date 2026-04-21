@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Brain Bridge API",
-    "version": "1.0.0",
-    "description": "Connect your local brain folder to ChatGPT. Read-only access to search and read files from your personal knowledge vault."
+    "version": "1.1.0",
+    "description": "Search, read, inspect, and write across connected local knowledge sources through Brain Bridge. Brain Bridge combines repositories, notes, research folders, and other connected local sources into one shared context for ChatGPT while keeping files local."
   },
   "servers": [
     {
@@ -12,11 +12,124 @@
     }
   ],
   "paths": {
+    "/api/actions/status": {
+      "get": {
+        "operationId": "getBrainBridgeStatus",
+        "summary": "Get Brain Bridge status",
+        "description": "Return the current Brain Bridge connection status and whether connected knowledge sources are available. Read-only.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Brain Bridge status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connected": {
+                      "type": "boolean",
+                      "description": "Whether Brain Bridge is connected and available"
+                    },
+                    "sourceCount": {
+                      "type": "integer",
+                      "description": "Number of connected knowledge sources"
+                    },
+                    "sourcesAvailable": {
+                      "type": "boolean",
+                      "description": "Whether at least one knowledge source is available"
+                    }
+                  },
+                  "required": ["connected", "sourceCount", "sourcesAvailable"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message"
+                    }
+                  },
+                  "required": ["error"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/actions/list-sources": {
+      "get": {
+        "operationId": "listKnowledgeSources",
+        "summary": "List connected knowledge sources",
+        "description": "Return the currently connected knowledge sources available through Brain Bridge. Read-only. Useful for understanding which repositories or folders are connected before searching.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Connected knowledge sources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Stable knowledge source identifier"
+                          },
+                          "label": {
+                            "type": "string",
+                            "description": "Human-readable knowledge source name"
+                          },
+                          "enabled": {
+                            "type": "boolean",
+                            "description": "Whether this knowledge source is enabled"
+                          }
+                        },
+                        "required": ["id", "label", "enabled"]
+                      }
+                    }
+                  },
+                  "required": ["sources"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message"
+                    }
+                  },
+                  "required": ["error"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/actions/search": {
       "post": {
-        "operationId": "searchBrain",
-        "summary": "Search local vault",
-        "description": "Search your personal knowledge vault for files matching the query. This is a read-only action that does not modify any files. Returns relative file paths safe for use with the read action. Absolute paths and ../ traversal are blocked.",
+        "operationId": "searchKnowledgeSources",
+        "summary": "Search connected knowledge sources",
+        "description": "Search across connected knowledge sources for matching files. Read-only. Returns safe relative paths for follow-up reads. Results may include sourceId showing which knowledge source a file came from. Absolute paths and ../ traversal are blocked.",
         "security": [{ "bearerAuth": [] }],
         "requestBody": {
           "required": true,
@@ -33,7 +146,7 @@
                   "limit": {
                     "type": "integer",
                     "default": 10,
-                    "description": "Maximum results to return (default: 10)"
+                    "description": "Maximum results to return"
                   }
                 }
               }
@@ -42,7 +155,7 @@
         },
         "responses": {
           "200": {
-            "description": "Search results from local vault",
+            "description": "Search results from connected knowledge sources",
             "content": {
               "application/json": {
                 "schema": {
@@ -53,9 +166,13 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "sourceId": {
+                            "type": "string",
+                            "description": "Knowledge source identifier for the result"
+                          },
                           "path": {
                             "type": "string",
-                            "description": "Relative file path in vault (safe for read action)"
+                            "description": "Relative file path within the source repository"
                           },
                           "title": {
                             "type": "string",
@@ -73,10 +190,29 @@
                             "type": "string",
                             "description": "Last modified timestamp"
                           }
-                        }
+                        },
+                        "required": ["path"]
                       }
                     }
-                  }
+                  },
+                  "required": ["results"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message"
+                    }
+                  },
+                  "required": ["error"]
                 }
               }
             }
@@ -86,9 +222,9 @@
     },
     "/api/actions/read": {
       "post": {
-        "operationId": "readBrainFile",
-        "summary": "Read file from local vault",
-        "description": "Read the full content of a file from your local vault. This is a read-only action that does not modify any files. Only accepts relative paths returned by the search action. Absolute paths and ../ traversal are blocked for safety.",
+        "operationId": "readKnowledgeSourceFile",
+        "summary": "Read file from connected knowledge sources",
+        "description": "Read the full content of a file from connected knowledge sources. Read-only. Use only relative paths returned by search. Absolute paths and ../ traversal are blocked for safety.",
         "security": [{ "bearerAuth": [] }],
         "requestBody": {
           "required": true,
@@ -100,7 +236,11 @@
                 "properties": {
                   "path": {
                     "type": "string",
-                    "description": "Relative file path in vault (from search result only)"
+                    "description": "Relative file path returned by the search action"
+                  },
+                  "sourceId": {
+                    "type": "string",
+                    "description": "Optional knowledge source identifier when known"
                   }
                 }
               }
@@ -109,7 +249,7 @@
         },
         "responses": {
           "200": {
-            "description": "File content from local vault",
+            "description": "File content from connected knowledge sources",
             "content": {
               "application/json": {
                 "schema": {
@@ -117,13 +257,52 @@
                   "properties": {
                     "path": {
                       "type": "string",
-                      "description": "File path"
+                      "description": "Relative file path"
+                    },
+                    "sourceId": {
+                      "type": "string",
+                      "description": "Knowledge source identifier when available"
                     },
                     "content": {
                       "type": "string",
                       "description": "Full file content"
                     }
-                  }
+                  },
+                  "required": ["path", "content"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error reading file",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message"
+                    }
+                  },
+                  "required": ["error"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message"
+                    }
+                  },
+                  "required": ["error"]
                 }
               }
             }
@@ -133,9 +312,9 @@
     },
     "/api/actions/search-and-read": {
       "post": {
-        "operationId": "searchAndReadBrain",
-        "summary": "Search and read files",
-        "description": "Search and read the top N results in a single call. This is a read-only action that combines search and read operations for fewer confirmations. Limited to 3 results maximum. Does not modify any files. Absolute paths and ../ traversal are blocked.",
+        "operationId": "searchAndReadKnowledgeSources",
+        "summary": "Search and read connected knowledge sources",
+        "description": "Search connected knowledge sources and read the top results in one call. Read-only. Limited to 3 results maximum. Does not modify files. Absolute paths and ../ traversal are blocked.",
         "security": [{ "bearerAuth": [] }],
         "requestBody": {
           "required": true,
@@ -152,7 +331,7 @@
                   "limit": {
                     "type": "integer",
                     "default": 2,
-                    "description": "Maximum results to return (capped at 3, default: 2)"
+                    "description": "Maximum results to return, capped at 3"
                   }
                 }
               }
@@ -161,7 +340,7 @@
         },
         "responses": {
           "200": {
-            "description": "Search results with full file contents",
+            "description": "Search results with file contents",
             "content": {
               "application/json": {
                 "schema": {
@@ -172,9 +351,13 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "sourceId": {
+                            "type": "string",
+                            "description": "Knowledge source identifier for the result, when available"
+                          },
                           "path": {
                             "type": "string",
-                            "description": "Relative file path in vault"
+                            "description": "Relative file path within the source repository"
                           },
                           "title": {
                             "type": "string",
@@ -192,10 +375,29 @@
                             "type": "string",
                             "description": "Last modified timestamp"
                           }
-                        }
+                        },
+                        "required": ["path", "content"]
                       }
                     }
-                  }
+                  },
+                  "required": ["results"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message"
+                    }
+                  },
+                  "required": ["error"]
                 }
               }
             }
@@ -206,8 +408,8 @@
     "/api/actions/append-inbox-note": {
       "post": {
         "operationId": "appendInboxNote",
-        "summary": "Create a new personal inbox note",
-        "description": "Create a new markdown note in the personal Mind vault inbox (01-inbox folder). This action only allows writing to mind/01-inbox/ folder and never overwrites existing files. Filenames are auto-generated with timestamp to prevent collisions. The title is slugified for safe filename creation.",
+        "summary": "Create a new inbox note",
+        "description": "Create a markdown note in the configured inbox destination. Writes only to the approved inbox path and never overwrites files. Filenames use a timestamp and slugified title to avoid collisions.",
         "security": [{ "bearerAuth": [] }],
         "requestBody": {
           "required": true,
@@ -219,7 +421,7 @@
                 "properties": {
                   "title": {
                     "type": "string",
-                    "description": "Note title (used to generate filename)"
+                    "description": "Note title used to generate the filename"
                   },
                   "content": {
                     "type": "string",
@@ -240,13 +442,14 @@
                   "properties": {
                     "path": {
                       "type": "string",
-                      "description": "Path to created note in vault"
+                      "description": "Path to the created note"
                     },
                     "status": {
                       "type": "string",
-                      "description": "Status (created)"
+                      "description": "Status value, typically created"
                     }
-                  }
+                  },
+                  "required": ["path", "status"]
                 }
               }
             }
@@ -262,7 +465,8 @@
                       "type": "string",
                       "description": "Error message"
                     }
-                  }
+                  },
+                  "required": ["error"]
                 }
               }
             }

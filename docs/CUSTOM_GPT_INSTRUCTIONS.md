@@ -28,6 +28,7 @@ If the first Brain Bridge action fails with a connection, configuration, authent
 ### Core Capabilities
 
 You can:
+- Get status for Brain Bridge and list connected knowledge sources
 - Search across all connected knowledge sources
 - Read file contents from connected sources
 - Create inbox notes in the personal knowledge source
@@ -68,25 +69,36 @@ When a user asks to migrate, reorganize, or refactor files in their knowledge so
 
 ## Usage Tips for Users
 
-1. **First Use**: After adding Brain Bridge to your Custom GPT, test it with a simple search query to verify the connection works.
+1. **First Use**: After adding Brain Bridge to your Custom GPT, test it with a simple status or search action to verify the connection works.
 
 2. **Token Configuration**: The Bearer token must match the `BRAIN_BRIDGE_ACTION_TOKEN` environment variable on the Brain Bridge server.
 
 3. **Knowledge Sources**: All searches query across all connected sources unless you explicitly ask to focus on a specific one (e.g., "search only in my Mind vault").
 
-4. **Read Results**: After searching, provide the full file path returned by search to the read action.
+4. **Read Results**: After searching, provide the full relative file path returned by search to the read action. If a result includes a `sourceId`, use that real source id as well.
 
-5. **Error Recovery**: If Brain Bridge becomes unavailable, the Custom GPT will report it once. Restart the Brain Bridge service and try again in a new conversation.
+5. **Placeholder Values**: Example strings such as `relative/path/to/file.md` or `optional-source-id` are examples only and are not production inputs.
+
+6. **Error Recovery**: If Brain Bridge becomes unavailable, the Custom GPT will report it once. Restart the Brain Bridge service and try again in a new conversation.
 
 ## Testing the Connection
 
-Try this in the Custom GPT:
+Try these in the Custom GPT:
+
+```
+Get Brain Bridge status
+```
+
+```
+List connected knowledge sources
+```
 
 ```
 Search my knowledge sources for "test"
 ```
 
-If this succeeds, Brain Bridge is properly connected. If it fails, verify:
+If these succeed, Brain Bridge is properly connected. If they fail, verify:
 - Brain Bridge services are running (agent on 3052, web app on 3054)
 - Bearer token is set and matches the token in the Custom GPT settings
-- The endpoint is reachable (local: http://localhost:3054, public: https://brainbridge.prochat.tools)
+- The endpoint is reachable (public: https://brainbridge.prochat.tools)
+- The schema source matches the live OpenAPI route or the updated static export
