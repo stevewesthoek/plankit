@@ -14,9 +14,9 @@ Repo-specific instructions and durable context for Claude Code.
 ## Architecture
 
 **Dual-repo structure:**
-- **Brain** (this repo) — Machine brain, knowledge base, data vault; bridges both systems
+- **BuildFlow** (this repo) — Machine brain, knowledge base, data vault; bridges both systems
 - **Mind** (symlinked as `mind/` in repo root) — Personal brain, Obsidian vault; separate repo
-- Brain-Bridge enables simultaneous access to both repos through a single entry point
+- BuildFlow enables simultaneous access to both repos through a single entry point
 
 **Tech stack:**
 - Next.js 14 (web app, port 3054)

@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "BuildFlow Custom GPT API",
-    "version": "2.0.0",
-    "description": "BuildFlow API for connected local knowledge sources. Use it to check status, list sources, search local context, read files, and create inbox notes."
+    "title": "BuildFlow API",
+    "version": "1.1.0",
+    "description": "Search, read, inspect, and write across connected local knowledge sources through BuildFlow. BuildFlow combines repositories, notes, research folders, and other connected local sources into one shared context for ChatGPT while keeping files local."
   },
   "servers": [
     {
@@ -143,7 +143,7 @@
       "post": {
         "operationId": "searchBuildFlowKnowledgeSources",
         "summary": "Search connected knowledge sources",
-        "description": "Search across connected knowledge sources for matching files.",
+        "description": "Search across connected knowledge sources for matching files. Read-only. Returns safe relative paths for follow-up reads. Results may include sourceId showing which knowledge source a file came from. Absolute paths and ../ traversal are blocked.",
         "security": [
           {
             "bearerAuth": []
@@ -241,7 +241,7 @@
       "post": {
         "operationId": "readBuildFlowKnowledgeSourceFile",
         "summary": "Read file from connected knowledge sources",
-        "description": "Read the full content of a file from connected knowledge sources.",
+        "description": "Read the full content of a file from connected knowledge sources. Read-only. Use only relative paths returned by search. Absolute paths and ../ traversal are blocked for safety.",
         "security": [
           {
             "bearerAuth": []
@@ -335,9 +335,9 @@
     },
     "/api/actions/search-and-read": {
       "post": {
-        "operationId": "searchAndReadBuildFlowKnowledgeSources",
+        "operationId": "searchAndReadKnowledgeSources",
         "summary": "Search and read connected knowledge sources",
-        "description": "Search connected knowledge sources and read the top results in one call.",
+        "description": "Search connected knowledge sources and read the top results in one call. Read-only. Limited to 3 results maximum. Does not modify files. Absolute paths and ../ traversal are blocked.",
         "security": [
           {
             "bearerAuth": []
@@ -434,9 +434,9 @@
     },
     "/api/actions/append-inbox-note": {
       "post": {
-        "operationId": "appendBuildFlowInboxNote",
+        "operationId": "appendInboxNote",
         "summary": "Create a new inbox note",
-        "description": "Create a markdown note in the configured inbox destination.",
+        "description": "Create a markdown note in the configured inbox destination. Writes only to the approved inbox path and never overwrites files. Filenames use a timestamp and slugified title to avoid collisions.",
         "security": [
           {
             "bearerAuth": []
