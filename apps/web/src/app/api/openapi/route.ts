@@ -99,7 +99,7 @@ const openapi = {
                   type: 'object',
                   additionalProperties: false,
                   properties: {
-                    status: { type: 'string' },
+                    status: { type: 'string', enum: ['ok'] },
                     sources: {
                       type: 'array',
                       items: {
@@ -110,8 +110,7 @@ const openapi = {
                           label: { type: 'string' },
                           enabled: { type: 'boolean' },
                           active: { type: 'boolean' },
-                          type: { type: 'string' },
-                          path: { type: 'string' }
+                          type: { type: 'string' }
                         },
                         required: ['id', 'label', 'enabled', 'active']
                       }
@@ -124,11 +123,14 @@ const openapi = {
                       type: 'array',
                       items: { type: 'string' }
                     }
-                  }
+                  },
+                  required: ['status', 'contextMode', 'activeSourceIds', 'sources']
                 }
               }
             }
-          }
+          },
+          400: { description: 'Bad request' },
+          401: { description: 'Unauthorized' }
         }
       }
     },

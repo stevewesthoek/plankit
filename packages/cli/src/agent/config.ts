@@ -130,11 +130,15 @@ export function setActiveSourceContext(mode: ActiveSourcesMode, activeSourceIds:
   if (!config) throw new Error('Please run: buildflow init')
   const sources = getEnabledSources()
   const ids = new Set(sources.map(s => s.id))
-  const filtered = activeSourceIds.filter(id => ids.has(id))
-  if (mode === 'single' && filtered.length !== 1) throw new Error('single mode requires exactly one activeSourceId')
-  if (mode === 'multi' && filtered.length === 0) throw new Error('multi mode requires one or more activeSourceIds')
+  const uniqueIds = Array.from(new Set(activeSourceIds.filter(id => typeof id === 'string' && id.length > 0)))
+  const invalidIds = uniqueIds.filter(id => !ids.has(id))
+  if (invalidIds.length > 0) {
+    throw new Error(`Unknown or disabled sourceId(s): ${invalidIds.join(', ')}`)
+  }
+  if (mode === 'single' && uniqueIds.length !== 1) throw new Error('single mode requires exactly one activeSourceId')
+  if (mode === 'multi' && uniqueIds.length === 0) throw new Error('multi mode requires one or more activeSourceIds')
   config.activeSourcesMode = mode
-  config.activeSourceIds = mode === 'all' ? sources.map(s => s.id) : filtered.slice(0, 10)
+  config.activeSourceIds = mode === 'all' ? sources.map(s => s.id) : uniqueIds.slice(0, 10)
   persistConfig(config)
   return getActiveSourceContext()
 }
