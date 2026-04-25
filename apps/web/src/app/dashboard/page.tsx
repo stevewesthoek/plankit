@@ -20,6 +20,10 @@ export default function Dashboard() {
   const [writeMode, setWriteMode] = useState<WriteMode>('safeWrites')
 
   const fetchSources = async () => {
+    let fetchedSources: KnowledgeSource[] = sources
+    let fetchedActiveMode: ActiveSourcesMode = activeMode
+    let fetchedActiveIds: string[] = activeSourceIds
+    let fetchedWriteMode: WriteMode = writeMode
     try {
       setError(null)
       setLoadErrorDetail(null)
@@ -30,26 +34,43 @@ export default function Dashboard() {
         throw new Error(`${data?.error || `Failed to fetch sources: ${response.status}`}${detail}`.trim())
       }
 
-      setSources(data.sources || [])
+      fetchedSources = data.sources || []
+      setSources(fetchedSources)
       setAgentConnected(true)
       const activeResponse = await fetch('/api/agent/active-sources')
       const activeData = await activeResponse.json().catch(() => ({}))
       if (!activeResponse.ok) {
         const detail = activeData?.details ? ` ${activeData.details}` : activeData?.detail ? ` ${activeData.detail}` : ''
-        throw new Error(`${activeData?.error || `Failed to fetch active sources: ${activeResponse.status}`}${detail}`.trim())
+        setLoadErrorDetail(`${activeData?.error || `Failed to fetch active sources: ${activeResponse.status}`}${detail}`.trim())
+        setActiveMode('all')
+        setActiveSourceIds([])
+      } else {
+        fetchedActiveMode = activeData.mode || 'all'
+        fetchedActiveIds = activeData.activeSourceIds || []
+        setActiveMode(fetchedActiveMode)
+        setActiveSourceIds(fetchedActiveIds)
       }
-      setActiveMode(activeData.mode || 'all')
-      setActiveSourceIds(activeData.activeSourceIds || [])
       const writeResponse = await fetch('/api/agent/write-mode')
       const writeData = await writeResponse.json().catch(() => ({}))
       if (!writeResponse.ok) {
         const detail = writeData?.details ? ` ${writeData.details}` : writeData?.detail ? ` ${writeData.detail}` : ''
-        throw new Error(`${writeData?.error || `Failed to fetch write mode: ${writeResponse.status}`}${detail}`.trim())
+        setLoadErrorDetail(`${writeData?.error || `Failed to fetch write mode: ${writeResponse.status}`}${detail}`.trim())
+        fetchedWriteMode = 'safeWrites'
+        setWriteMode(fetchedWriteMode)
+      } else {
+        fetchedWriteMode = writeData.writeMode || 'safeWrites'
+        setWriteMode(fetchedWriteMode)
       }
-      setWriteMode(writeData.writeMode || 'safeWrites')
+      setAgentConnected(true)
     } catch (err) {
       setLoadErrorDetail(String(err))
       setError('Unable to load sources')
+      if (fetchedSources.length > 0) {
+        setSources(fetchedSources)
+      }
+      setActiveMode(fetchedActiveMode)
+      setActiveSourceIds(fetchedActiveIds)
+      setWriteMode(fetchedWriteMode)
       setAgentConnected(false)
     } finally {
       setLoading(false)
@@ -89,6 +110,9 @@ export default function Dashboard() {
       return true
     } catch (err) {
       setMutationError(String(err))
+      if (url === '/api/agent/sources/toggle' || url === '/api/agent/sources/add' || url === '/api/agent/sources/remove' || url === '/api/agent/active-sources' || url === '/api/agent/write-mode') {
+        await fetchSources().catch(() => {})
+      }
       return false
     } finally {
       setMutationLoading(false)
@@ -116,6 +140,11 @@ export default function Dashboard() {
   }
 
   const handleSetMode = async (mode: ActiveSourcesMode) => {
+    const enabledCount = sources.filter(source => source.enabled).length
+    if ((mode === 'single' || mode === 'multi') && enabledCount === 0) {
+      setMutationError(`Cannot set ${mode} mode while no sources are enabled`)
+      return
+    }
     const nextIds = mode === 'all' ? [] : activeSourceIds.slice(0, mode === 'single' ? 1 : Math.max(activeSourceIds.length, 1))
     await mutateSources('/api/agent/active-sources', { mode, activeSourceIds: nextIds })
   }

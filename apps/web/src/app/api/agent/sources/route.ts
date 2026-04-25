@@ -23,7 +23,7 @@ export async function GET() {
     })
   } catch (err) {
     return NextResponse.json(
-      { error: `Failed to reach agent: ${String(err)}` },
+      { error: 'BuildFlow agent is unavailable', detail: String(err) },
       { status: 503 }
     )
   }

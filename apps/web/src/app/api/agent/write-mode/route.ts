@@ -5,9 +5,16 @@ export const revalidate = 0
 
 async function proxy(url: string, options?: RequestInit) {
   const backendUrl = process.env.LOCAL_AGENT_URL || 'http://127.0.0.1:3052'
-  const response = await fetch(backendUrl + url, options)
-  const data = await response.json().catch(() => ({}))
-  return NextResponse.json(data, { status: response.status })
+  try {
+    const response = await fetch(backendUrl + url, options)
+    const data = await response.json().catch(() => ({}))
+    return NextResponse.json(data, { status: response.status })
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'BuildFlow agent is unavailable', detail: String(err) },
+      { status: 503 }
+    )
+  }
 }
 
 export async function GET() {

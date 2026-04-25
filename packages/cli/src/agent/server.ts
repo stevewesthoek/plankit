@@ -517,7 +517,6 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
       }
 
       const sources = setSourceEnabled(sourceId, enabled)
-      await rebuildIndexAndSearcher()
       return { sources }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
