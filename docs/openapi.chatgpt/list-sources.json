@@ -1,0 +1,118 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "List knowledge sources",
+    "version": "1.1.0",
+    "description": "List connected knowledge sources."
+  },
+  "servers": [
+    {
+      "url": "https://buildflow.prochat.tools",
+      "description": "BuildFlow public endpoint"
+    }
+  ],
+  "paths": {
+    "/api/actions/list-sources": {
+      "get": {
+        "operationId": "listBuildFlowKnowledgeSources",
+        "summary": "List knowledge sources",
+        "description": "List connected knowledge sources.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connected knowledge sources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Source id"
+                          },
+                          "label": {
+                            "type": "string",
+                            "description": "Source label"
+                          },
+                          "enabled": {
+                            "type": "boolean",
+                            "description": "Whether source is enabled"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "enabled"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "sources"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Get BuildFlow status",
+    "version": "1.1.0",
+    "description": "Get BuildFlow connection status."
+  },
+  "servers": [
+    {
+      "url": "https://buildflow.prochat.tools",
+      "description": "BuildFlow public endpoint"
+    }
+  ],
+  "paths": {
+    "/api/actions/status": {
+      "get": {
+        "operationId": "getBuildFlowStatus",
+        "summary": "Get BuildFlow status",
+        "description": "Get BuildFlow connection status.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "BuildFlow status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "connected": {
+                      "type": "boolean"
+                    },
+                    "sourceCount": {
+                      "type": "integer"
+                    },
+                    "sourcesAvailable": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "connected",
+                    "sourceCount",
+                    "sourcesAvailable"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

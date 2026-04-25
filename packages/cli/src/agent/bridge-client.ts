@@ -5,9 +5,11 @@ import { Indexer } from './indexer'
 import { VaultSearcher } from './search'
 import { createExportPlan } from './export'
 import { listWorkspaceTree, grepWorkspace, getWorkspaceInfo, resolveWorkspacePath, validateWorkspacePath } from './workspace'
+import { getSourceRoot, isAllowedWriteRoot, isBlockedWritePath, redactSecrets, resolveWithinSource, truncateContent } from './safe-access'
 import { debug, log } from '../utils/logger'
 import { logToFile } from '../utils/logger'
 import fs from 'fs'
+import path from 'path'
 
 export class BridgeClient {
   private ws: WebSocket | null = null
@@ -295,6 +297,142 @@ export class BridgeClient {
 
             const content = fs.readFileSync(fullPath, 'utf-8')
             result = { path, content, workspace, size: stat.size }
+          } catch (err) {
+            error = String(err)
+          }
+          break
+        }
+
+        case 'list-files': {
+          const sourceId = params.sourceId
+          const relPath = params.path || ''
+          const depth = params.depth || 3
+          const limit = params.limit || 100
+          try {
+            const source = getSourceRoot(sourceId)
+            const { fullPath } = resolveWithinSource(relPath, source.id)
+            if (!fs.existsSync(fullPath)) throw new Error('Path not found')
+            const stat = fs.statSync(fullPath)
+            if (!stat.isDirectory()) throw new Error('Not a directory')
+            const entries: Array<Record<string, unknown>> = []
+            const walk = (dir: string, currentRel: string, currentDepth: number): void => {
+              if (entries.length >= limit || currentDepth > depth) return
+              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                if (entries.length >= limit) break
+                if (entry.name.startsWith('.')) continue
+                const nextRel = currentRel ? `${currentRel}/${entry.name}` : entry.name
+                const nextFull = path.join(dir, entry.name)
+                const nextStat = fs.statSync(nextFull)
+                entries.push({ sourceId: source.id, path: nextRel, type: entry.isDirectory() ? 'directory' : 'file', sizeBytes: nextStat.size, modifiedAt: nextStat.mtime.toISOString() })
+                if (entry.isDirectory() && currentDepth + 1 < depth) walk(nextFull, nextRel, currentDepth + 1)
+              }
+            }
+            walk(fullPath, relPath, 0)
+            result = { sourceId: source.id, path: relPath, entries, nextCursor: undefined }
+          } catch (err) {
+            error = String(err)
+          }
+          break
+        }
+
+        case 'read-files': {
+          const sourceId = params.sourceId
+          const paths = Array.isArray(params.paths) ? params.paths : []
+          const maxBytesPerFile = params.maxBytesPerFile || 30000
+          if (paths.length === 0) {
+            error = 'Paths required'
+            break
+          }
+          const files = []
+          for (const relPath of paths.slice(0, 10)) {
+            try {
+              const resolved = resolveWithinSource(relPath, sourceId)
+              const stat = fs.statSync(resolved.fullPath)
+              if (!stat.isFile()) throw new Error('Not a file')
+              const content = redactSecrets(fs.readFileSync(resolved.fullPath, 'utf-8'))
+              const truncated = truncateContent(content, maxBytesPerFile)
+              files.push({ sourceId: resolved.sourceId, path: relPath, content: truncated.content, truncated: truncated.truncated, sizeBytes: stat.size, modifiedAt: stat.mtime.toISOString() })
+            } catch (err) {
+              files.push({ path: relPath, error: String(err) })
+            }
+          }
+          result = { files }
+          break
+        }
+
+        case 'write-file': {
+          const relPath = params.path
+          const content = params.content
+          const mode = params.mode || 'createOnly'
+          if (!relPath || !content) {
+            error = 'Path and content required'
+            break
+          }
+          if (isBlockedWritePath(relPath) || !isAllowedWriteRoot(relPath)) {
+            error = 'Write path blocked'
+            break
+          }
+          try {
+            const resolved = resolveWithinSource(relPath, params.sourceId)
+            if (mode === 'createOnly' && fs.existsSync(resolved.fullPath)) {
+              error = 'File already exists'
+              break
+            }
+            fs.mkdirSync(path.dirname(resolved.fullPath), { recursive: true })
+            fs.writeFileSync(resolved.fullPath, content, 'utf-8')
+            result = { status: 'ok', sourceId: resolved.sourceId, path: relPath, bytesWritten: Buffer.byteLength(content, 'utf8'), created: mode === 'createOnly', overwritten: mode === 'overwrite' }
+          } catch (err) {
+            error = String(err)
+          }
+          break
+        }
+
+        case 'patch-file': {
+          const relPath = params.path
+          const find = params.find
+          const replace = params.replace || ''
+          if (!relPath || !find) {
+            error = 'Path and find required'
+            break
+          }
+          if (isBlockedWritePath(relPath) || !isAllowedWriteRoot(relPath)) {
+            error = 'Patch path blocked'
+            break
+          }
+          try {
+            const resolved = resolveWithinSource(relPath, params.sourceId)
+            if (!fs.existsSync(resolved.fullPath)) throw new Error('File not found')
+            const original = fs.readFileSync(resolved.fullPath, 'utf-8')
+            const matches = original.split(find).length - 1
+            if (matches !== 1) throw new Error(matches === 0 ? 'Find text not found' : 'Find text matched multiple times')
+            fs.writeFileSync(resolved.fullPath, original.replace(find, replace), 'utf-8')
+            result = { status: 'ok', sourceId: resolved.sourceId, path: relPath, replacements: 1 }
+          } catch (err) {
+            error = String(err)
+          }
+          break
+        }
+
+        case 'create-plan': {
+          const title = params.title
+          const content = params.content
+          const folder = params.folder || 'docs/plans'
+          if (!title || !content) {
+            error = 'Title and content required'
+            break
+          }
+          if (isBlockedWritePath(folder) || !isAllowedWriteRoot(folder)) {
+            error = 'Plan folder blocked'
+            break
+          }
+          try {
+            const slug = title.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-')
+            const relPath = `${folder.replace(/\/$/, '')}/${Date.now()}-${slug}.md`
+            const resolved = resolveWithinSource(relPath, params.sourceId)
+            fs.mkdirSync(path.dirname(resolved.fullPath), { recursive: true })
+            if (fs.existsSync(resolved.fullPath)) throw new Error('Plan already exists')
+            fs.writeFileSync(resolved.fullPath, content, 'utf-8')
+            result = { status: 'created', sourceId: resolved.sourceId, path: relPath }
           } catch (err) {
             error = String(err)
           }

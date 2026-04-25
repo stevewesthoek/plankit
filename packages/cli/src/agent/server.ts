@@ -1,5 +1,6 @@
 import Fastify from 'fastify'
 import fs from 'fs'
+import path from 'path'
 import { Indexer } from './indexer'
 import { VaultSearcher } from './search'
 import { readFile, createFile, appendFile, createInboxNote, listFolder } from './vault'
@@ -7,6 +8,7 @@ import { logToFile } from '../utils/logger'
 import { createExportPlan } from './export'
 import { loadConfig, getWorkspaces, getSources, getSourcesSafe, addSource, removeSource, setSourceEnabled } from './config'
 import { listWorkspaceTree, grepWorkspace, getWorkspaceInfo, resolveWorkspacePath, validateWorkspacePath } from './workspace'
+import { getSourceRoot, isAllowedWriteRoot, isBlockedWritePath, redactSecrets, resolveWithinSource, truncateContent } from './safe-access'
 import type { Workspace } from '@buildflow/shared'
 
 export async function startLocalServer(port: number = 3052): Promise<void> {
@@ -128,6 +130,117 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
         const result = await readFile(path, sourceId)
         return result
       }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.post<{ Body: { sourceId?: string; path?: string; depth?: number; glob?: string; limit?: number; cursor?: string } }>('/api/list-files', async (request, reply) => {
+    try {
+      const { sourceId, path: relPath = '', depth = 3, glob, limit = 100, cursor } = request.body
+      const source = getSourceRoot(sourceId)
+      const basePath = relPath || ''
+      const { fullPath } = resolveWithinSource(basePath, source.id)
+      if (!fs.existsSync(fullPath)) return reply.code(404).send({ error: 'Path not found' })
+      const stat = fs.statSync(fullPath)
+      if (!stat.isDirectory()) return reply.code(400).send({ error: 'Not a directory' })
+      const entries: Array<Record<string, unknown>> = []
+      const walk = (dir: string, currentRel: string, currentDepth: number): void => {
+        if (entries.length >= limit || currentDepth > depth) return
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (entries.length >= limit) break
+          if (entry.name.startsWith('.')) continue
+          const nextRel = currentRel ? `${currentRel}/${entry.name}` : entry.name
+          if (glob && !nextRel.includes(glob.replace('**/', '').replace('*', ''))) continue
+          const nextFull = path.join(dir, entry.name)
+          const nextStat = fs.statSync(nextFull)
+          entries.push({
+            sourceId: source.id,
+            path: nextRel,
+            type: entry.isDirectory() ? 'directory' : 'file',
+            sizeBytes: nextStat.size,
+            modifiedAt: nextStat.mtime.toISOString()
+          })
+          if (entry.isDirectory() && currentDepth + 1 < depth) walk(nextFull, nextRel, currentDepth + 1)
+        }
+      }
+      walk(fullPath, relPath, 0)
+      return { sourceId: source.id, path: relPath, entries, nextCursor: undefined, cursor }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.post<{ Body: { sourceId?: string; paths: string[]; maxBytesPerFile?: number } }>('/api/read-files', async (request, reply) => {
+    try {
+      const { sourceId, paths: pathsInput, maxBytesPerFile = 30000 } = request.body
+      if (!Array.isArray(pathsInput) || pathsInput.length === 0) return reply.code(400).send({ error: 'Paths required' })
+      const files = []
+      for (const relPath of pathsInput.slice(0, 10)) {
+        try {
+          const { sourceId: resolvedSourceId, fullPath } = resolveWithinSource(relPath, sourceId)
+          const stat = fs.statSync(fullPath)
+          if (!stat.isFile()) throw new Error('Not a file')
+          const content = fs.readFileSync(fullPath, 'utf-8')
+          const safe = redactSecrets(content)
+          const truncated = truncateContent(safe, maxBytesPerFile)
+          files.push({ sourceId: resolvedSourceId, path: relPath, content: truncated.content, truncated: truncated.truncated, sizeBytes: stat.size, modifiedAt: stat.mtime.toISOString() })
+        } catch (error) {
+          files.push({ path: relPath, error: String(error) })
+        }
+      }
+      return { files }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.post<{ Body: { sourceId?: string; path: string; content: string; mode?: 'createOnly' | 'overwrite'; reason?: string } }>('/api/write-file', async (request, reply) => {
+    try {
+      const { sourceId, path: relPath, content, mode = 'createOnly' } = request.body
+      if (!relPath || !content) return reply.code(400).send({ error: 'Path and content required' })
+      if (isBlockedWritePath(relPath) || !isAllowedWriteRoot(relPath)) return reply.code(403).send({ error: 'Write path blocked' })
+      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, sourceId)
+      if (mode === 'createOnly' && fs.existsSync(fullPath)) return reply.code(409).send({ error: 'File already exists' })
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true })
+      fs.writeFileSync(fullPath, content, 'utf-8')
+      return { status: 'ok', sourceId: resolvedSourceId, path: relPath, bytesWritten: Buffer.byteLength(content, 'utf8'), created: mode === 'createOnly', overwritten: mode === 'overwrite' }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.post<{ Body: { sourceId?: string; path: string; find: string; replace: string } }>('/api/patch-file', async (request, reply) => {
+    try {
+      const { sourceId, path: relPath, find, replace } = request.body
+      if (!relPath || !find) return reply.code(400).send({ error: 'Path and find required' })
+      if (isBlockedWritePath(relPath) || !isAllowedWriteRoot(relPath)) return reply.code(403).send({ error: 'Patch path blocked' })
+      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, sourceId)
+      if (!fs.existsSync(fullPath)) return reply.code(404).send({ error: 'File not found' })
+      const original = fs.readFileSync(fullPath, 'utf-8')
+      const matches = original.split(find).length - 1
+      if (matches !== 1) return reply.code(400).send({ error: matches === 0 ? 'Find text not found' : 'Find text matched multiple times' })
+      const updated = original.replace(find, replace)
+      fs.writeFileSync(fullPath, updated, 'utf-8')
+      return { status: 'ok', sourceId: resolvedSourceId, path: relPath, replacements: 1 }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.post<{ Body: { sourceId?: string; title: string; content: string; folder?: string } }>('/api/create-plan', async (request, reply) => {
+    try {
+      const { sourceId, title, content, folder = 'docs/plans' } = request.body
+      if (!title || !content) return reply.code(400).send({ error: 'Title and content required' })
+      if (isBlockedWritePath(folder) || !isAllowedWriteRoot(folder)) return reply.code(403).send({ error: 'Plan folder blocked' })
+      const safeSlug = title.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-')
+      const filename = `${Date.now()}-${safeSlug}.md`
+      const relPath = `${folder.replace(/\/$/, '')}/${filename}`
+      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, sourceId)
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true })
+      if (fs.existsSync(fullPath)) return reply.code(409).send({ error: 'Plan already exists' })
+      fs.writeFileSync(fullPath, content, 'utf-8')
+      return { status: 'created', sourceId: resolvedSourceId, path: relPath }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }

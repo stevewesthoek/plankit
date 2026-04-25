@@ -12,6 +12,9 @@ Phase 3.6 secures the public ChatGPT Actions endpoints with a minimal bearer tok
   - `POST /api/actions/search`
   - `POST /api/actions/read`
   - `POST /api/actions/search-and-read`
+  - `GET /api/actions/list-sources`
+  - `GET /api/actions/status`
+  - `POST /api/actions/append-inbox-note`
 - **Unprotected endpoints:**
   - `GET /api/openapi` (schema endpoint, read-only)
   - `/api/relay/*` (bridge relay, internal only)
@@ -137,8 +140,9 @@ To use BuildFlow with ChatGPT Custom Actions:
    - **Auth type:** Bearer
    - **API Key:** `<your-token-here>`
 4. **Upload OpenAPI schema:**
-   - **Schema source:** Paste the contents of `docs/openapi.chatgpt.json`
-   - **Or import URL:** `https://buildflow.prochat.tools/api/openapi`
+   - **Preferred:** Import the per-action URLs one at a time
+   - **Fallback:** Paste the contents of `docs/openapi.chatgpt.json`
+   - **Fallback:** Import URL `https://buildflow.prochat.tools/api/openapi`
 5. **Test the action:** Use ChatGPT to search and read files
 
 ### Important Notes
@@ -170,7 +174,7 @@ if (authError) return authError
 
 ## OpenAPI Schema Updates
 
-Both the static (`docs/openapi.chatgpt.json`) and dynamic (`/api/openapi`) schemas now include:
+Both the static bundled schema (`docs/openapi.chatgpt.json`) and the dynamic `/api/openapi` schema include:
 
 ```json
 {
