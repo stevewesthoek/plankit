@@ -86,6 +86,17 @@ const openapi = {
                   }
                 },
                 required: ['action']
+              },
+              examples: {
+                listSources: {
+                  value: { action: 'list_sources' }
+                },
+                getActive: {
+                  value: { action: 'get_active' }
+                },
+                setActive: {
+                  value: { action: 'set_active', contextMode: 'single', sourceIds: ['buildflow'] }
+                }
               }
             }
           }
@@ -130,7 +141,9 @@ const openapi = {
             }
           },
           400: { description: 'Bad request' },
-          401: { description: 'Unauthorized' }
+          401: { description: 'Unauthorized' },
+          500: { description: 'Server error' },
+          502: { description: 'Upstream error' }
         }
       }
     },
@@ -184,6 +197,14 @@ const openapi = {
                   }
                 },
                 required: ['mode']
+              },
+              examples: {
+                listFiles: {
+                  value: { mode: 'list_files', path: '', depth: 2, limit: 20 }
+                },
+                search: {
+                  value: { mode: 'search', query: 'README', limit: 5 }
+                }
               }
             }
           }
@@ -217,6 +238,11 @@ const openapi = {
               }
             }
           }
+          ,
+          400: { description: 'Bad request' },
+          401: { description: 'Unauthorized' },
+          500: { description: 'Server error' },
+          502: { description: 'Upstream error' }
         }
       }
     },
@@ -277,6 +303,14 @@ const openapi = {
                   }
                 },
                 required: ['mode']
+              },
+              examples: {
+                readPaths: {
+                  value: { mode: 'read_paths', sourceId: 'buildflow', paths: ['README.md'], maxBytesPerFile: 10000 }
+                },
+                searchAndRead: {
+                  value: { mode: 'search_and_read', query: 'README', limit: 2, maxBytesPerFile: 10000 }
+                }
               }
             }
           }
@@ -320,6 +354,11 @@ const openapi = {
               }
             }
           }
+          ,
+          400: { description: 'Bad request' },
+          401: { description: 'Unauthorized' },
+          500: { description: 'Server error' },
+          502: { description: 'Upstream error' }
         }
       }
     },
@@ -364,6 +403,16 @@ const openapi = {
                   }
                 },
                 required: ['artifactType', 'title', 'content']
+              },
+              examples: {
+                taskBrief: {
+                  value: {
+                    sourceId: 'buildflow',
+                    artifactType: 'task_brief',
+                    title: 'BuildFlow smoke test',
+                    content: 'This confirms artifact writing works.'
+                  }
+                }
               }
             }
           }
@@ -387,6 +436,11 @@ const openapi = {
               }
             }
           }
+          ,
+          400: { description: 'Bad request' },
+          401: { description: 'Unauthorized' },
+          500: { description: 'Server error' },
+          502: { description: 'Upstream error' }
         }
       }
     },
@@ -445,6 +499,17 @@ const openapi = {
                   }
                 },
                 required: ['changeType', 'sourceId', 'path', 'reason']
+              },
+              examples: {
+                append: {
+                  value: {
+                    changeType: 'append',
+                    sourceId: 'buildflow',
+                    path: 'docs/buildflow/testing/smoke-test.md',
+                    content: 'Smoke test append.',
+                    reason: 'Verify applyBuildFlowFileChange works.'
+                  }
+                }
               }
             }
           }
@@ -470,6 +535,11 @@ const openapi = {
               }
             }
           }
+          ,
+          400: { description: 'Bad request' },
+          401: { description: 'Unauthorized' },
+          500: { description: 'Server error' },
+          502: { description: 'Upstream error' }
         }
       }
     }

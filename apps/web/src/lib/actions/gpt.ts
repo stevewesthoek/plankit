@@ -160,18 +160,85 @@ export async function dispatchBuildFlowRead(body: Record<string, unknown>) {
     }
     if (Array.isArray(body.sourceIds)) payload.sourceIds = body.sourceIds
     if (typeof body.sourceId === 'string') payload.sourceId = body.sourceId
-    return executeAction('/api/read-files', payload)
+    const result = await executeAction('/api/read-files', payload)
+    return {
+      mode: 'read_paths',
+      files: Array.isArray((result as { files?: unknown }).files) ? (result as { files: unknown[] }).files : []
+    }
   }
   if (mode === 'search_and_read') {
     if (typeof body.query !== 'string' || !body.query) throw new Error('Missing query parameter')
-    const payload: Record<string, unknown> = {
+    const searchPayload: Record<string, unknown> = {
       query: body.query,
-      limit: typeof body.limit === 'number' ? body.limit : 3,
+      limit: typeof body.limit === 'number' ? body.limit : 3
+    }
+    if (Array.isArray(body.sourceIds)) searchPayload.sourceIds = body.sourceIds
+    if (typeof body.sourceId === 'string') searchPayload.sourceId = body.sourceId
+
+    const searchResult = await executeAction('/api/search', searchPayload)
+    const results = Array.isArray((searchResult as { results?: unknown }).results)
+      ? ((searchResult as { results: Array<Record<string, unknown>> }).results || [])
+      : []
+
+    if (results.length === 0) {
+      throw new Error(`No matching files found for query: ${body.query}`)
+    }
+
+    const pathEntries = results
+      .map(result => {
+        const path = typeof result.path === 'string' ? result.path : ''
+        const sourceId = typeof result.sourceId === 'string' ? result.sourceId : undefined
+        return path ? { path, sourceId } : null
+      })
+      .filter((entry): entry is { path: string; sourceId: string | undefined } => entry !== null)
+      .slice(0, typeof body.limit === 'number' ? body.limit : 3)
+
+    const sourceIds = Array.from(new Set(pathEntries.map(entry => entry.sourceId).filter((id): id is string => typeof id === 'string' && id.length > 0)))
+    const readPayload: Record<string, unknown> = {
+      paths: pathEntries.map(entry => entry.path),
       maxBytesPerFile: typeof body.maxBytesPerFile === 'number' ? body.maxBytesPerFile : 30000
     }
-    if (Array.isArray(body.sourceIds)) payload.sourceIds = body.sourceIds
-    if (typeof body.sourceId === 'string') payload.sourceId = body.sourceId
-    return executeAction('/api/search-and-read', payload)
+    if (sourceIds.length > 0) {
+      readPayload.sourceIds = sourceIds
+    } else if (typeof body.sourceId === 'string') {
+      readPayload.sourceId = body.sourceId
+    }
+
+    const readResult = await executeAction('/api/read-files', readPayload)
+    const files = Array.isArray((readResult as { files?: unknown }).files)
+      ? ((readResult as { files: Array<Record<string, unknown>> }).files || [])
+      : []
+
+    const fileMap = new Map<string, Record<string, unknown>>()
+    for (const file of files) {
+      const key = `${typeof file.sourceId === 'string' ? file.sourceId : ''}::${typeof file.path === 'string' ? file.path : ''}`
+      if (key !== '::') fileMap.set(key, file)
+    }
+
+    return {
+      mode: 'search_and_read',
+      results: pathEntries.map(entry => {
+        const candidates = [
+          entry.sourceId ? `${entry.sourceId}::${entry.path}` : '',
+          ...Array.from(fileMap.keys()).filter(key => key.endsWith(`::${entry.path}`))
+        ].filter(Boolean)
+        const match = candidates.map(key => fileMap.get(key)).find(Boolean)
+        return {
+          sourceId: entry.sourceId || (match && typeof match.sourceId === 'string' ? match.sourceId : undefined),
+          path: entry.path,
+          title: typeof (results.find(result => result.path === entry.path && (!entry.sourceId || result.sourceId === entry.sourceId))?.title) === 'string'
+            ? (results.find(result => result.path === entry.path && (!entry.sourceId || result.sourceId === entry.sourceId))?.title as string)
+            : undefined,
+          snippet: typeof (results.find(result => result.path === entry.path && (!entry.sourceId || result.sourceId === entry.sourceId))?.snippet) === 'string'
+            ? (results.find(result => result.path === entry.path && (!entry.sourceId || result.sourceId === entry.sourceId))?.snippet as string)
+            : undefined,
+          content: typeof match?.content === 'string' ? match.content : undefined,
+          truncated: typeof match?.truncated === 'boolean' ? match.truncated : undefined,
+          sizeBytes: typeof match?.sizeBytes === 'number' ? match.sizeBytes : undefined,
+          modifiedAt: typeof match?.modifiedAt === 'string' ? match.modifiedAt : undefined
+        }
+      })
+    }
   }
   throw new Error('Invalid mode')
 }

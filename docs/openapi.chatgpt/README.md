@@ -17,7 +17,6 @@ This combined schema exposes the full BuildFlow agent through six high-level ope
 
 - The backend still has lower-level `/api/actions/*` endpoints for internal use and debugging.
 - Do not import the per-action URLs one by one into a new Custom GPT.
-- The old `append-inbox-note` action is removed and should not be used.
 
 ## Authentication
 
@@ -41,3 +40,10 @@ The API must receive:
 10. Apply a safe file change.
 11. Try to write to `.env` and verify the backend blocks it.
 12. Try to write while multiple sources are active without `sourceId` and verify the backend asks for `sourceId` or returns a clear error.
+
+## Local workflow
+
+- Restart local services and rebuild: `pnpm restart:local`
+- Run the public Custom GPT smoke verifier: `pnpm verify:gpt-actions`
+- The verifier expects `BUILDFLOW_ACTION_TOKEN` in the environment.
+- If you run the smoke verifier locally, it creates temporary task artifacts under `docs/buildflow/tasks/`; delete them after the run if you do not want to keep the smoke-test files.

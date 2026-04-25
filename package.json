@@ -11,7 +11,9 @@
     "dev": "pnpm -r dev",
     "build": "pnpm -r build",
     "type-check": "pnpm -r type-check",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "verify:gpt-actions": "node scripts/verify-custom-gpt-actions.mjs",
+    "restart:local": "bash scripts/restart-buildflow-local.sh"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
