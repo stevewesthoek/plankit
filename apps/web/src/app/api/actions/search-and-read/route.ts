@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { query, limit = 2 } = body
+    const { query, limit = 2, sourceId, sourceIds, maxBytesPerFile } = body
 
     if (!query) {
       return NextResponse.json(
@@ -21,7 +21,10 @@ export async function POST(request: NextRequest) {
     const cappedLimit = Math.min(Math.max(limit, 1), 3)
 
     // Search first
-    const searchData = await executeAction('/api/search', { query, limit: cappedLimit })
+    const searchPayload: Record<string, unknown> = { query, limit: cappedLimit }
+    if (sourceId) searchPayload.sourceId = sourceId
+    if (sourceIds) searchPayload.sourceIds = sourceIds
+    const searchData = await executeAction('/api/search', searchPayload)
     const searchResults = (searchData as Record<string, unknown>).results as unknown[] || []
 
     // Read each result (up to capped limit)
@@ -32,6 +35,9 @@ export async function POST(request: NextRequest) {
         const readPayload: Record<string, unknown> = { path: resultObj.path }
         if (resultObj.sourceId) {
           readPayload.sourceId = resultObj.sourceId
+        }
+        if (maxBytesPerFile) {
+          readPayload.maxBytes = maxBytesPerFile
         }
 
         const readData = await executeAction('/api/read', readPayload)

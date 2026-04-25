@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Get BuildFlow status",
-    "version": "1.1.0",
-    "description": "Get BuildFlow connection status."
+    "version": "1.3.0",
+    "description": "Get current BuildFlow connection status."
   },
   "servers": [
     {
@@ -11,12 +11,20 @@
       "description": "BuildFlow public endpoint"
     }
   ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
   "paths": {
     "/api/actions/status": {
       "get": {
         "operationId": "getBuildFlowStatus",
         "summary": "Get BuildFlow status",
-        "description": "Get BuildFlow connection status.",
+        "description": "Get current BuildFlow connection status.",
         "security": [
           {
             "bearerAuth": []
@@ -24,7 +32,7 @@
         ],
         "responses": {
           "200": {
-            "description": "BuildFlow status",
+            "description": "Status",
             "content": {
               "application/json": {
                 "schema": {
@@ -40,12 +48,7 @@
                     "sourcesAvailable": {
                       "type": "boolean"
                     }
-                  },
-                  "required": [
-                    "connected",
-                    "sourceCount",
-                    "sourcesAvailable"
-                  ]
+                  }
                 }
               }
             }
@@ -89,14 +92,6 @@
             }
           }
         }
-      }
-    }
-  },
-  "components": {
-    "securitySchemes": {
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer"
       }
     }
   }

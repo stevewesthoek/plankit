@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { getConfigPath, expandTilde } from '../utils/paths'
-import type { Workspace, KnowledgeSource } from '@buildflow/shared'
+import type { Workspace, KnowledgeSource, ActiveSourcesMode, WriteMode } from '@buildflow/shared'
 
 export interface AgentConfig {
   userId: string
@@ -11,6 +11,9 @@ export interface AgentConfig {
   vaultPath?: string
   inboxSourceId?: string
   sources?: KnowledgeSource[]
+  activeSourceIds?: string[]
+  activeSourcesMode?: ActiveSourcesMode
+  writeMode?: WriteMode
   localPort?: number
   mode: 'read_create_append'
   allowedExtensions: string[]
@@ -67,6 +70,10 @@ function persistSources(config: AgentConfig, sources: KnowledgeSource[]): void {
   saveConfig(config)
 }
 
+function persistConfig(config: AgentConfig): void {
+  saveConfig(config)
+}
+
 export function generateSourceIdFromPath(sourcePath: string): string {
   return path.basename(sourcePath).toLowerCase().replace(/[^a-z0-9-]/g, '-')
 }
@@ -98,6 +105,53 @@ export function getEnabledSources(): KnowledgeSource[] {
   return getSources().filter(s => s.enabled)
 }
 
+export function getActiveSourceContext(): { mode: ActiveSourcesMode; activeSourceIds: string[]; sources: KnowledgeSource[] } {
+  const config = loadConfig()
+  const sources = getSourcesSafe().filter(s => s.enabled)
+  const mode = config?.activeSourcesMode || 'all'
+  const configuredIds = config?.activeSourceIds || []
+  let activeSourceIds: string[] = []
+
+  if (mode === 'single') {
+    activeSourceIds = configuredIds.slice(0, 1)
+  } else if (mode === 'multi') {
+    activeSourceIds = configuredIds
+  } else {
+    activeSourceIds = sources.map(s => s.id)
+  }
+
+  const activeIds = new Set(activeSourceIds)
+  const hydrated = sources.map(source => ({ ...source, active: activeIds.has(source.id) } as KnowledgeSource & { active?: boolean }))
+  return { mode, activeSourceIds, sources: hydrated }
+}
+
+export function setActiveSourceContext(mode: ActiveSourcesMode, activeSourceIds: string[] = []): { mode: ActiveSourcesMode; activeSourceIds: string[]; sources: KnowledgeSource[] } {
+  const config = loadConfig()
+  if (!config) throw new Error('Please run: buildflow init')
+  const sources = getEnabledSources()
+  const ids = new Set(sources.map(s => s.id))
+  const filtered = activeSourceIds.filter(id => ids.has(id))
+  if (mode === 'single' && filtered.length !== 1) throw new Error('single mode requires exactly one activeSourceId')
+  if (mode === 'multi' && filtered.length === 0) throw new Error('multi mode requires one or more activeSourceIds')
+  config.activeSourcesMode = mode
+  config.activeSourceIds = mode === 'all' ? sources.map(s => s.id) : filtered.slice(0, 10)
+  persistConfig(config)
+  return getActiveSourceContext()
+}
+
+export function getWriteMode(): WriteMode {
+  const config = loadConfig()
+  return config?.writeMode || 'safeWrites'
+}
+
+export function setWriteMode(writeMode: WriteMode): WriteMode {
+  const config = loadConfig()
+  if (!config) throw new Error('Please run: buildflow init')
+  config.writeMode = writeMode
+  persistConfig(config)
+  return getWriteMode()
+}
+
 export function addSource(pathInput: string, label?: string, id?: string): KnowledgeSource[] {
   const config = loadConfig()
   if (!config) {
@@ -127,7 +181,8 @@ export function addSource(pathInput: string, label?: string, id?: string): Knowl
     id: sourceId,
     label: label || path.basename(expanded),
     path: expanded,
-    enabled: true
+    enabled: true,
+    type: 'unknown'
   })
 
   persistSources(config, sources)

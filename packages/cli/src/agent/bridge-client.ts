@@ -5,7 +5,8 @@ import { Indexer } from './indexer'
 import { VaultSearcher } from './search'
 import { createExportPlan } from './export'
 import { listWorkspaceTree, grepWorkspace, getWorkspaceInfo, resolveWorkspacePath, validateWorkspacePath } from './workspace'
-import { getSourceRoot, isAllowedWriteRoot, isBlockedWritePath, redactSecrets, resolveWithinSource, truncateContent } from './safe-access'
+import { getActiveSourceContext, getSourcesSafe, getWriteMode, setActiveSourceContext } from './config'
+import { getResolvedActiveSources, getSourceRoot, isAllowedArtifactRoot, isAllowedSafeWriteRoot, isBlockedWritePath, redactSecrets, resolveTargetSourceId, resolveWithinSource, shouldIncludeEntry, truncateContent } from './safe-access'
 import { debug, log } from '../utils/logger'
 import { logToFile } from '../utils/logger'
 import fs from 'fs'
@@ -303,113 +304,163 @@ export class BridgeClient {
           break
         }
 
-        case 'list-files': {
-          const sourceId = params.sourceId
-          const relPath = params.path || ''
-          const depth = params.depth || 3
-          const limit = params.limit || 100
-          try {
-            const source = getSourceRoot(sourceId)
-            const { fullPath } = resolveWithinSource(relPath, source.id)
-            if (!fs.existsSync(fullPath)) throw new Error('Path not found')
-            const stat = fs.statSync(fullPath)
-            if (!stat.isDirectory()) throw new Error('Not a directory')
-            const entries: Array<Record<string, unknown>> = []
-            const walk = (dir: string, currentRel: string, currentDepth: number): void => {
-              if (entries.length >= limit || currentDepth > depth) return
-              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-                if (entries.length >= limit) break
-                if (entry.name.startsWith('.')) continue
-                const nextRel = currentRel ? `${currentRel}/${entry.name}` : entry.name
-                const nextFull = path.join(dir, entry.name)
-                const nextStat = fs.statSync(nextFull)
-                entries.push({ sourceId: source.id, path: nextRel, type: entry.isDirectory() ? 'directory' : 'file', sizeBytes: nextStat.size, modifiedAt: nextStat.mtime.toISOString() })
-                if (entry.isDirectory() && currentDepth + 1 < depth) walk(nextFull, nextRel, currentDepth + 1)
-              }
-            }
-            walk(fullPath, relPath, 0)
-            result = { sourceId: source.id, path: relPath, entries, nextCursor: undefined }
-          } catch (err) {
-            error = String(err)
+        case 'get-active-sources': {
+          const active = getActiveSourceContext()
+          const sources = getSourcesSafe().map(source => ({ id: source.id, label: source.label, enabled: source.enabled, active: active.activeSourceIds.includes(source.id), type: (source as { type?: string }).type || 'unknown' }))
+          result = {
+            mode: active.mode,
+            activeSourceIds: active.activeSourceIds,
+            sources
           }
           break
         }
 
+        case 'set-active-sources': {
+          const mode = params.mode
+          const activeSourceIds = params.activeSourceIds || []
+          const updated = setActiveSourceContext(mode, activeSourceIds)
+          result = { status: 'ok', mode: updated.mode, activeSourceIds: updated.activeSourceIds }
+          break
+        }
+
+        case 'list-files': {
+          const sourceIds = params.sourceIds || (params.sourceId ? [params.sourceId] : undefined)
+          const relPath = params.path || ''
+          const depth = params.depth || 3
+          const limit = params.limit || 100
+          const targets = getResolvedActiveSources(sourceIds)
+          const entries: Array<Record<string, unknown>> = []
+          for (const source of targets) {
+            try {
+              const fullPath = path.resolve(path.join(source.path, path.normalize(relPath)))
+              if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isDirectory()) continue
+              const walk = (dir: string, currentRel: string, currentDepth: number): void => {
+                if (entries.length >= limit || currentDepth > depth) return
+                for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                  if (entries.length >= limit) break
+                  if (!shouldIncludeEntry(entry.name)) continue
+                  const nextRel = currentRel ? `${currentRel}/${entry.name}` : entry.name
+                  const nextFull = path.join(dir, entry.name)
+                  const stat = fs.statSync(nextFull)
+                  entries.push({ sourceId: source.id, path: nextRel, type: entry.isDirectory() ? 'directory' : 'file', sizeBytes: stat.size, modifiedAt: stat.mtime.toISOString() })
+                  if (entry.isDirectory() && currentDepth + 1 < depth) walk(nextFull, nextRel, currentDepth + 1)
+                }
+              }
+              walk(fullPath, relPath, 0)
+            } catch (err) {
+              error = String(err)
+            }
+          }
+          result = { sourceId: targets[0]?.id, path: relPath, entries }
+          break
+        }
+
         case 'read-files': {
-          const sourceId = params.sourceId
+          const sourceIds = params.sourceIds || (params.sourceId ? [params.sourceId] : undefined)
           const paths = Array.isArray(params.paths) ? params.paths : []
           const maxBytesPerFile = params.maxBytesPerFile || 30000
-          if (paths.length === 0) {
-            error = 'Paths required'
-            break
-          }
+          const targets = getResolvedActiveSources(sourceIds)
           const files = []
           for (const relPath of paths.slice(0, 10)) {
-            try {
-              const resolved = resolveWithinSource(relPath, sourceId)
-              const stat = fs.statSync(resolved.fullPath)
-              if (!stat.isFile()) throw new Error('Not a file')
-              const content = redactSecrets(fs.readFileSync(resolved.fullPath, 'utf-8'))
-              const truncated = truncateContent(content, maxBytesPerFile)
-              files.push({ sourceId: resolved.sourceId, path: relPath, content: truncated.content, truncated: truncated.truncated, sizeBytes: stat.size, modifiedAt: stat.mtime.toISOString() })
-            } catch (err) {
-              files.push({ path: relPath, error: String(err) })
+            let found = false
+            for (const source of targets) {
+              try {
+                const result = await readFile(relPath, source.id)
+                const safe = redactSecrets(result.content)
+                const truncated = truncateContent(safe, maxBytesPerFile)
+                const fullPath = path.join(source.path, path.normalize(relPath))
+                const stat = fs.statSync(fullPath)
+                files.push({ sourceId: source.id, path: relPath, content: truncated.content, truncated: truncated.truncated, sizeBytes: stat.size, modifiedAt: stat.mtime.toISOString() })
+                found = true
+                break
+              } catch {}
             }
+            if (!found) files.push({ path: relPath, error: 'File not found in active sources' })
           }
           result = { files }
           break
         }
 
+        case 'create-artifact': {
+          const artifactType = params.artifactType
+          const title = params.title
+          const content = params.content
+          const folderMap: Record<string, string> = {
+            implementation_plan: 'docs/buildflow/plans',
+            codex_prompt: 'docs/buildflow/prompts/codex',
+            claude_prompt: 'docs/buildflow/prompts/claude',
+            architecture_note: 'docs/buildflow/architecture',
+            research_summary: 'docs/buildflow/research',
+            test_plan: 'docs/buildflow/testing',
+            migration_plan: 'docs/buildflow/migrations',
+            task_brief: 'docs/buildflow/tasks',
+            general_doc: 'docs/buildflow/notes'
+          }
+          const targetFolder = params.folder || folderMap[artifactType]
+          const sourceId = resolveTargetSourceId(params.sourceId)
+          if (!sourceId) throw new Error('Target sourceId required')
+          const slug = (params.filename || title).toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-')
+          const relPath = `${targetFolder.replace(/\/$/, '')}/${Date.now()}-${slug}.md`
+          const resolved = resolveWithinSource(relPath, sourceId)
+          fs.mkdirSync(path.dirname(resolved.fullPath), { recursive: true })
+          if (fs.existsSync(resolved.fullPath)) throw new Error('Artifact already exists')
+          fs.writeFileSync(resolved.fullPath, content, 'utf-8')
+          result = { status: 'created', sourceId: resolved.sourceId, path: relPath, artifactType, created: true }
+          break
+        }
+
+        case 'append-file': {
+          const sourceId = resolveTargetSourceId(params.sourceId)
+          const relPath = params.path
+          const content = params.content
+          const separator = params.separator ?? '\n\n'
+          if (!sourceId) throw new Error('Target sourceId required')
+          if (!relPath || !content) throw new Error('Path and content required')
+          if (isBlockedWritePath(relPath) || !isAllowedSafeWriteRoot(relPath)) throw new Error('Append path blocked')
+          if (getWriteMode() === 'readOnly') throw new Error('Write mode is readOnly')
+          const resolved = resolveWithinSource(relPath, sourceId)
+          if (!fs.existsSync(resolved.fullPath)) throw new Error('File not found')
+          const appended = `${separator}${content}`
+          fs.appendFileSync(resolved.fullPath, appended, 'utf-8')
+          result = { status: 'ok', sourceId: resolved.sourceId, path: relPath, bytesAppended: Buffer.byteLength(appended, 'utf8') }
+          break
+        }
+
         case 'write-file': {
+          const sourceId = resolveTargetSourceId(params.sourceId)
           const relPath = params.path
           const content = params.content
           const mode = params.mode || 'createOnly'
-          if (!relPath || !content) {
-            error = 'Path and content required'
-            break
-          }
-          if (isBlockedWritePath(relPath) || !isAllowedWriteRoot(relPath)) {
-            error = 'Write path blocked'
-            break
-          }
-          try {
-            const resolved = resolveWithinSource(relPath, params.sourceId)
-            if (mode === 'createOnly' && fs.existsSync(resolved.fullPath)) {
-              error = 'File already exists'
-              break
-            }
-            fs.mkdirSync(path.dirname(resolved.fullPath), { recursive: true })
-            fs.writeFileSync(resolved.fullPath, content, 'utf-8')
-            result = { status: 'ok', sourceId: resolved.sourceId, path: relPath, bytesWritten: Buffer.byteLength(content, 'utf8'), created: mode === 'createOnly', overwritten: mode === 'overwrite' }
-          } catch (err) {
-            error = String(err)
-          }
+          if (!sourceId) throw new Error('Target sourceId required')
+          if (getWriteMode() === 'readOnly') throw new Error('Write mode is readOnly')
+          if (!relPath || !content) throw new Error('Path and content required')
+          if (isBlockedWritePath(relPath) || !isAllowedSafeWriteRoot(relPath)) throw new Error('Write path blocked')
+          const resolved = resolveWithinSource(relPath, sourceId)
+          if (mode === 'createOnly' && fs.existsSync(resolved.fullPath)) throw new Error('File already exists')
+          fs.mkdirSync(path.dirname(resolved.fullPath), { recursive: true })
+          fs.writeFileSync(resolved.fullPath, content, 'utf-8')
+          result = { status: 'ok', sourceId: resolved.sourceId, path: relPath, bytesWritten: Buffer.byteLength(content, 'utf8'), created: mode === 'createOnly', overwritten: mode === 'overwrite' }
           break
         }
 
         case 'patch-file': {
+          const sourceId = resolveTargetSourceId(params.sourceId)
           const relPath = params.path
           const find = params.find
           const replace = params.replace || ''
-          if (!relPath || !find) {
-            error = 'Path and find required'
-            break
-          }
-          if (isBlockedWritePath(relPath) || !isAllowedWriteRoot(relPath)) {
-            error = 'Patch path blocked'
-            break
-          }
-          try {
-            const resolved = resolveWithinSource(relPath, params.sourceId)
-            if (!fs.existsSync(resolved.fullPath)) throw new Error('File not found')
-            const original = fs.readFileSync(resolved.fullPath, 'utf-8')
-            const matches = original.split(find).length - 1
-            if (matches !== 1) throw new Error(matches === 0 ? 'Find text not found' : 'Find text matched multiple times')
-            fs.writeFileSync(resolved.fullPath, original.replace(find, replace), 'utf-8')
-            result = { status: 'ok', sourceId: resolved.sourceId, path: relPath, replacements: 1 }
-          } catch (err) {
-            error = String(err)
-          }
+          const allowMultiple = params.allowMultiple || false
+          if (!sourceId) throw new Error('Target sourceId required')
+          if (getWriteMode() === 'readOnly') throw new Error('Write mode is readOnly')
+          if (!relPath || !find) throw new Error('Path and find required')
+          if (isBlockedWritePath(relPath) || !isAllowedSafeWriteRoot(relPath)) throw new Error('Patch path blocked')
+          const resolved = resolveWithinSource(relPath, sourceId)
+          if (!fs.existsSync(resolved.fullPath)) throw new Error('File not found')
+          const original = fs.readFileSync(resolved.fullPath, 'utf-8')
+          const matches = original.split(find).length - 1
+          if (matches === 0) throw new Error('Find text not found')
+          if (matches > 1 && !allowMultiple) throw new Error('Find text matched multiple times')
+          fs.writeFileSync(resolved.fullPath, original.replace(find, replace), 'utf-8')
+          result = { status: 'ok', sourceId: resolved.sourceId, path: relPath, replacements: allowMultiple ? matches : 1 }
           break
         }
 
@@ -421,7 +472,7 @@ export class BridgeClient {
             error = 'Title and content required'
             break
           }
-          if (isBlockedWritePath(folder) || !isAllowedWriteRoot(folder)) {
+          if (isBlockedWritePath(folder) || !isAllowedArtifactRoot(folder)) {
             error = 'Plan folder blocked'
             break
           }

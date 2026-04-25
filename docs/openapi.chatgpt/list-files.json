@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "List files",
-    "version": "1.1.0",
-    "description": "List files and folders in a source."
+    "version": "1.3.0",
+    "description": "List files and folders in active or selected sources."
   },
   "servers": [
     {
@@ -11,12 +11,20 @@
       "description": "BuildFlow public endpoint"
     }
   ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
   "paths": {
     "/api/actions/list-files": {
       "post": {
         "operationId": "listBuildFlowFiles",
         "summary": "List files",
-        "description": "List files and folders in a source.",
+        "description": "List files and folders in active or selected sources.",
         "security": [
           {
             "bearerAuth": []
@@ -32,36 +40,40 @@
                 "properties": {
                   "sourceId": {
                     "type": "string",
-                    "description": "Optional source id"
+                    "description": "Optional source id."
+                  },
+                  "sourceIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Optional source ids. If omitted, BuildFlow uses active sources.",
+                    "minItems": 1,
+                    "maxItems": 10
                   },
                   "path": {
                     "type": "string",
-                    "description": "Optional folder path"
+                    "description": "Optional relative folder path to list."
                   },
                   "depth": {
                     "type": "integer",
-                    "description": "Max folder depth",
+                    "description": "Maximum folder depth to return.",
                     "default": 3,
                     "minimum": 1,
                     "maximum": 8
                   },
-                  "glob": {
-                    "type": "string",
-                    "description": "Optional glob filter"
-                  },
                   "limit": {
                     "type": "integer",
-                    "description": "Max entries",
+                    "description": "Maximum entries to return.",
                     "default": 100,
                     "minimum": 1,
                     "maximum": 500
                   },
                   "cursor": {
                     "type": "string",
-                    "description": "Pagination cursor"
+                    "description": "Pagination cursor."
                   }
-                },
-                "required": []
+                }
               }
             }
           }
@@ -106,20 +118,13 @@
                           "modifiedAt": {
                             "type": "string"
                           }
-                        },
-                        "required": [
-                          "path",
-                          "type"
-                        ]
+                        }
                       }
                     },
                     "nextCursor": {
                       "type": "string"
                     }
-                  },
-                  "required": [
-                    "entries"
-                  ]
+                  }
                 }
               }
             }
@@ -162,7 +167,45 @@
               }
             }
           },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
           "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
             "description": "Error",
             "content": {
               "application/json": {
@@ -239,14 +282,6 @@
             }
           }
         }
-      }
-    }
-  },
-  "components": {
-    "securitySchemes": {
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer"
       }
     }
   }

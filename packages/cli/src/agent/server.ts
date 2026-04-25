@@ -6,9 +6,9 @@ import { VaultSearcher } from './search'
 import { readFile, createFile, appendFile, createInboxNote, listFolder } from './vault'
 import { logToFile } from '../utils/logger'
 import { createExportPlan } from './export'
-import { loadConfig, getWorkspaces, getSources, getSourcesSafe, addSource, removeSource, setSourceEnabled } from './config'
+import { loadConfig, getWorkspaces, getSources, getSourcesSafe, addSource, removeSource, setSourceEnabled, getActiveSourceContext, setActiveSourceContext, getWriteMode, setWriteMode } from './config'
 import { listWorkspaceTree, grepWorkspace, getWorkspaceInfo, resolveWorkspacePath, validateWorkspacePath } from './workspace'
-import { getSourceRoot, isAllowedWriteRoot, isBlockedWritePath, redactSecrets, resolveWithinSource, truncateContent } from './safe-access'
+import { getResolvedActiveSources, isAllowedArtifactRoot, isAllowedSafeWriteRoot, isBlockedWritePath, redactSecrets, resolveTargetSourceId, resolveWithinSource, shouldIncludeEntry, truncateContent } from './safe-access'
 import type { Workspace } from '@buildflow/shared'
 
 export async function startLocalServer(port: number = 3052): Promise<void> {
@@ -25,6 +25,26 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
 
   let searcher = new VaultSearcher(indexer.getDocs())
   const config = loadConfig()
+
+  const assertWriteMode = (isArtifact = false, relPath?: string): void => {
+    const mode = getWriteMode()
+    if (mode === 'readOnly') {
+      throw new Error('Write mode is readOnly')
+    }
+    if (mode === 'artifactsOnly') {
+      if (!relPath || !isAllowedArtifactRoot(relPath)) {
+        throw new Error('Write mode blocks non-artifact paths')
+      }
+      if (!relPath.startsWith('docs/buildflow') && !relPath.startsWith('.buildflow')) {
+        throw new Error('Write mode blocks non-artifact paths')
+      }
+    }
+    if (mode === 'safeWrites') {
+      if (!relPath || !isAllowedSafeWriteRoot(relPath)) {
+        throw new Error('Write path blocked')
+      }
+    }
+  }
 
   const rebuildIndexAndSearcher = async (): Promise<void> => {
     await indexer.buildIndex()
@@ -69,9 +89,10 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
   })
 
   // Search endpoint
-  fastify.post<{ Body: { query: string; limit?: number } }>('/api/search', async (request, reply) => {
-    const { query, limit = 10 } = request.body
-    const results = searcher.search(query, limit)
+  fastify.post<{ Body: { query: string; limit?: number; sourceId?: string; sourceIds?: string[] } }>('/api/search', async (request, reply) => {
+    const { query, limit = 10, sourceId, sourceIds } = request.body
+    const resolvedSourceIds = sourceIds && sourceIds.length > 0 ? sourceIds : sourceId ? [sourceId] : getActiveSourceContext().activeSourceIds
+    const results = searcher.search(query, limit, resolvedSourceIds)
 
     logToFile({
       timestamp: new Date().toISOString(),
@@ -83,19 +104,19 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
   })
 
   // Read endpoint (multi-source aware with guardrails)
-  fastify.post<{ Body: { path: string; workspace?: string; sourceId?: string } }>('/api/read', async (request, reply) => {
+  fastify.post<{ Body: { path: string; workspace?: string; sourceId?: string; sourceIds?: string[]; maxBytes?: number } }>('/api/read', async (request, reply) => {
     try {
-      const { path, workspace, sourceId } = request.body
+      const { path: relPath, workspace, sourceId, sourceIds, maxBytes = 60000 } = request.body
 
       if (workspace) {
         // Workspace-aware read with guardrails
         const ws = getWorkspaceInfo(workspace)
-        const validation = validateWorkspacePath(ws, path)
+        const validation = validateWorkspacePath(ws, relPath)
         if (!validation.valid) {
           return reply.code(400).send({ error: validation.error })
         }
 
-        const fullPath = resolveWorkspacePath(ws, path)
+        const fullPath = resolveWorkspacePath(ws, relPath)
 
         // Check file existence and size
         if (!fs.existsSync(fullPath)) {
@@ -118,78 +139,169 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
         logToFile({
           timestamp: new Date().toISOString(),
           tool: 'read_file',
-          path,
+          path: relPath,
           workspace,
           status: 'success',
           size: stat.size
         })
 
-        return { path, content }
+        return { path: relPath, content }
       } else {
-        // Multi-source read: use sourceId hint if provided
-        const result = await readFile(path, sourceId)
-        return result
-      }
-    } catch (err) {
-      return reply.code(400).send({ error: String(err) })
-    }
-  })
-
-  fastify.post<{ Body: { sourceId?: string; path?: string; depth?: number; glob?: string; limit?: number; cursor?: string } }>('/api/list-files', async (request, reply) => {
-    try {
-      const { sourceId, path: relPath = '', depth = 3, glob, limit = 100, cursor } = request.body
-      const source = getSourceRoot(sourceId)
-      const basePath = relPath || ''
-      const { fullPath } = resolveWithinSource(basePath, source.id)
-      if (!fs.existsSync(fullPath)) return reply.code(404).send({ error: 'Path not found' })
-      const stat = fs.statSync(fullPath)
-      if (!stat.isDirectory()) return reply.code(400).send({ error: 'Not a directory' })
-      const entries: Array<Record<string, unknown>> = []
-      const walk = (dir: string, currentRel: string, currentDepth: number): void => {
-        if (entries.length >= limit || currentDepth > depth) return
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-          if (entries.length >= limit) break
-          if (entry.name.startsWith('.')) continue
-          const nextRel = currentRel ? `${currentRel}/${entry.name}` : entry.name
-          if (glob && !nextRel.includes(glob.replace('**/', '').replace('*', ''))) continue
-          const nextFull = path.join(dir, entry.name)
-          const nextStat = fs.statSync(nextFull)
-          entries.push({
-            sourceId: source.id,
-            path: nextRel,
-            type: entry.isDirectory() ? 'directory' : 'file',
-            sizeBytes: nextStat.size,
-            modifiedAt: nextStat.mtime.toISOString()
-          })
-          if (entry.isDirectory() && currentDepth + 1 < depth) walk(nextFull, nextRel, currentDepth + 1)
+        const resolvedSourceIds = sourceIds && sourceIds.length > 0 ? sourceIds : sourceId ? [sourceId] : getActiveSourceContext().activeSourceIds
+        const targets = getResolvedActiveSources(resolvedSourceIds.length > 0 ? resolvedSourceIds : undefined)
+        const matches: Array<{ sourceId: string; content: string; size: number; modifiedAt: string }> = []
+        for (const sid of targets.map(source => source.id)) {
+          try {
+            const result = await readFile(relPath, sid)
+            const fullMatch = targets.find(source => source.id === sid)
+            if (!fullMatch) continue
+            const fullPath = path.join(fullMatch.path, path.normalize(relPath))
+            const stat = fs.statSync(fullPath)
+            matches.push({ sourceId: sid, content: result.content, size: stat.size, modifiedAt: stat.mtime.toISOString() })
+          } catch {}
         }
+        if (matches.length === 0) {
+        return reply.code(404).send({ error: 'File not found in active sources' })
+        }
+        if (!sourceId && matches.length > 1) {
+          return reply.code(400).send({ error: `Ambiguous path across active sources: ${matches.map(m => m.sourceId).join(', ')}` })
+        }
+        const chosen = matches[0]
+        const content = redactSecrets(chosen.content)
+        const truncated = truncateContent(content, maxBytes)
+        return { sourceId: chosen.sourceId, path: relPath, content: truncated.content, truncated: truncated.truncated, sizeBytes: chosen.size, modifiedAt: chosen.modifiedAt }
       }
-      walk(fullPath, relPath, 0)
-      return { sourceId: source.id, path: relPath, entries, nextCursor: undefined, cursor }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }
   })
 
-  fastify.post<{ Body: { sourceId?: string; paths: string[]; maxBytesPerFile?: number } }>('/api/read-files', async (request, reply) => {
+  fastify.post<{ Body: { sourceId?: string; sourceIds?: string[]; paths: string[]; maxBytesPerFile?: number } }>('/api/read-files', async (request, reply) => {
     try {
-      const { sourceId, paths: pathsInput, maxBytesPerFile = 30000 } = request.body
-      if (!Array.isArray(pathsInput) || pathsInput.length === 0) return reply.code(400).send({ error: 'Paths required' })
+      const { sourceId, sourceIds, paths: relPaths, maxBytesPerFile = 30000 } = request.body
+      if (!Array.isArray(relPaths) || relPaths.length === 0) return reply.code(400).send({ error: 'Paths required' })
+      const resolvedSourceIds = sourceIds && sourceIds.length > 0 ? sourceIds : sourceId ? [sourceId] : getActiveSourceContext().activeSourceIds
+      const targets = getResolvedActiveSources(resolvedSourceIds.length > 0 ? resolvedSourceIds : undefined)
       const files = []
-      for (const relPath of pathsInput.slice(0, 10)) {
-        try {
-          const { sourceId: resolvedSourceId, fullPath } = resolveWithinSource(relPath, sourceId)
-          const stat = fs.statSync(fullPath)
-          if (!stat.isFile()) throw new Error('Not a file')
-          const content = fs.readFileSync(fullPath, 'utf-8')
-          const safe = redactSecrets(content)
-          const truncated = truncateContent(safe, maxBytesPerFile)
-          files.push({ sourceId: resolvedSourceId, path: relPath, content: truncated.content, truncated: truncated.truncated, sizeBytes: stat.size, modifiedAt: stat.mtime.toISOString() })
-        } catch (error) {
-          files.push({ path: relPath, error: String(error) })
+      for (const relPath of relPaths.slice(0, 10)) {
+        let found = false
+        for (const source of targets) {
+          try {
+            const result = await readFile(relPath, source.id)
+            const content = redactSecrets(result.content)
+            const truncated = truncateContent(content, maxBytesPerFile)
+            const fullPath = path.join(source.path, path.normalize(relPath))
+            const stat = fs.statSync(fullPath)
+            files.push({ sourceId: source.id, path: relPath, content: truncated.content, truncated: truncated.truncated, sizeBytes: stat.size, modifiedAt: stat.mtime.toISOString() })
+            found = true
+            break
+          } catch {}
         }
+        if (!found) files.push({ path: relPath, error: 'File not found in active sources' })
       }
       return { files }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.post<{ Body: { sourceId?: string; mode?: 'single' | 'multi' | 'all'; activeSourceIds?: string[] } }>('/api/get-active-sources', async () => {
+    const active = getActiveSourceContext()
+    const sources = getSourcesSafe().map(source => ({ ...source, active: active.activeSourceIds.includes(source.id), type: (source as any).type || 'unknown' }))
+    return { mode: active.mode, activeSourceIds: active.activeSourceIds, sources }
+  })
+
+  fastify.post<{ Body: { mode: 'single' | 'multi' | 'all'; activeSourceIds?: string[] } }>('/api/set-active-sources', async (request, reply) => {
+    try {
+      const { mode, activeSourceIds = [] } = request.body
+      const result = setActiveSourceContext(mode, activeSourceIds)
+      const sources = getSourcesSafe().map(source => ({ ...source, active: result.activeSourceIds.includes(source.id), type: (source as any).type || 'unknown' }))
+      return { status: 'ok', mode: result.mode, activeSourceIds: result.activeSourceIds, sources }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.get('/api/write-mode', async () => {
+    return { writeMode: getWriteMode() }
+  })
+
+  fastify.post<{ Body: { writeMode: 'readOnly' | 'artifactsOnly' | 'safeWrites' } }>('/api/write-mode', async (request, reply) => {
+    try {
+      const { writeMode } = request.body
+      return { writeMode: setWriteMode(writeMode) }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.post<{ Body: { sourceId?: string; artifactType: string; title: string; content: string; folder?: string; filename?: string } }>('/api/create-artifact', async (request, reply) => {
+    try {
+      const { sourceId, artifactType, title, content, folder, filename } = request.body
+      const defaults: Record<string, string> = {
+        implementation_plan: 'docs/buildflow/plans',
+        codex_prompt: 'docs/buildflow/prompts/codex',
+        claude_prompt: 'docs/buildflow/prompts/claude',
+        architecture_note: 'docs/buildflow/architecture',
+        research_summary: 'docs/buildflow/research',
+        test_plan: 'docs/buildflow/testing',
+        migration_plan: 'docs/buildflow/migrations',
+        task_brief: 'docs/buildflow/tasks',
+        general_doc: 'docs/buildflow/notes'
+      }
+      const targetFolder = folder || defaults[artifactType]
+      if (!targetFolder) return reply.code(400).send({ error: 'Unknown artifact type' })
+      assertWriteMode(true, targetFolder)
+      if (isBlockedWritePath(targetFolder) || !isAllowedArtifactRoot(targetFolder)) return reply.code(403).send({ error: 'Artifact folder blocked' })
+      const slug = (filename || title).toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-')
+      const relPath = `${targetFolder.replace(/\/$/, '')}/${Date.now()}-${slug}.md`
+      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, resolveTargetSourceId(sourceId))
+      if (fs.existsSync(fullPath)) return reply.code(409).send({ error: 'Artifact already exists' })
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true })
+      fs.writeFileSync(fullPath, content, 'utf-8')
+      return { status: 'created', sourceId: resolvedSourceId, path: relPath, artifactType, created: true }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.post<{ Body: { sourceId?: string; sourceIds?: string[]; path?: string; depth?: number; limit?: number; cursor?: string } }>('/api/list-files', async (request, reply) => {
+    try {
+      const { sourceId, sourceIds, path: relPath = '', depth = 3, limit = 100, cursor } = request.body
+      const resolvedSourceIds = sourceIds && sourceIds.length > 0 ? sourceIds : sourceId ? [sourceId] : getActiveSourceContext().activeSourceIds
+      const targets = getResolvedActiveSources(resolvedSourceIds.length > 0 ? resolvedSourceIds : undefined)
+      const entries: Array<Record<string, unknown>> = []
+
+      for (const source of targets) {
+        const fullPath = path.resolve(path.join(source.path, path.normalize(relPath)))
+        if (!fullPath.startsWith(path.resolve(source.path))) continue
+        if (!fs.existsSync(fullPath)) continue
+        const stat = fs.statSync(fullPath)
+        if (!stat.isDirectory()) continue
+
+        const walk = (dir: string, currentRel: string, currentDepth: number): void => {
+          if (entries.length >= limit || currentDepth > depth) return
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (entries.length >= limit) break
+            if (!shouldIncludeEntry(entry.name)) continue
+            const nextRel = currentRel ? `${currentRel}/${entry.name}` : entry.name
+            const nextFull = path.join(dir, entry.name)
+            const nextStat = fs.statSync(nextFull)
+            entries.push({
+              sourceId: source.id,
+              path: nextRel,
+              type: entry.isDirectory() ? 'directory' : 'file',
+              sizeBytes: nextStat.size,
+              modifiedAt: nextStat.mtime.toISOString()
+            })
+            if (entry.isDirectory() && currentDepth + 1 < depth) walk(nextFull, nextRel, currentDepth + 1)
+          }
+        }
+
+        walk(fullPath, relPath, 0)
+      }
+
+      return { sourceId: targets[0]?.id, path: relPath, entries, nextCursor: undefined, cursor }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }
@@ -198,9 +310,10 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
   fastify.post<{ Body: { sourceId?: string; path: string; content: string; mode?: 'createOnly' | 'overwrite'; reason?: string } }>('/api/write-file', async (request, reply) => {
     try {
       const { sourceId, path: relPath, content, mode = 'createOnly' } = request.body
-      if (!relPath || !content) return reply.code(400).send({ error: 'Path and content required' })
-      if (isBlockedWritePath(relPath) || !isAllowedWriteRoot(relPath)) return reply.code(403).send({ error: 'Write path blocked' })
-      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, sourceId)
+      assertWriteMode(false, relPath)
+      if (!relPath || typeof content !== 'string') return reply.code(400).send({ error: 'Path and content required' })
+      if (isBlockedWritePath(relPath) || !isAllowedSafeWriteRoot(relPath)) return reply.code(403).send({ error: 'Write path blocked' })
+      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, resolveTargetSourceId(sourceId))
       if (mode === 'createOnly' && fs.existsSync(fullPath)) return reply.code(409).send({ error: 'File already exists' })
       fs.mkdirSync(path.dirname(fullPath), { recursive: true })
       fs.writeFileSync(fullPath, content, 'utf-8')
@@ -213,9 +326,11 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
   fastify.post<{ Body: { sourceId?: string; path: string; find: string; replace: string } }>('/api/patch-file', async (request, reply) => {
     try {
       const { sourceId, path: relPath, find, replace } = request.body
-      if (!relPath || !find) return reply.code(400).send({ error: 'Path and find required' })
-      if (isBlockedWritePath(relPath) || !isAllowedWriteRoot(relPath)) return reply.code(403).send({ error: 'Patch path blocked' })
-      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, sourceId)
+      assertWriteMode(false, relPath)
+      if (!relPath || typeof find !== 'string' || find.length === 0) return reply.code(400).send({ error: 'Path and find required' })
+      if (typeof replace !== 'string') return reply.code(400).send({ error: 'Replace required' })
+      if (isBlockedWritePath(relPath) || !isAllowedSafeWriteRoot(relPath)) return reply.code(403).send({ error: 'Patch path blocked' })
+      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, resolveTargetSourceId(sourceId))
       if (!fs.existsSync(fullPath)) return reply.code(404).send({ error: 'File not found' })
       const original = fs.readFileSync(fullPath, 'utf-8')
       const matches = original.split(find).length - 1
@@ -232,15 +347,32 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
     try {
       const { sourceId, title, content, folder = 'docs/plans' } = request.body
       if (!title || !content) return reply.code(400).send({ error: 'Title and content required' })
-      if (isBlockedWritePath(folder) || !isAllowedWriteRoot(folder)) return reply.code(403).send({ error: 'Plan folder blocked' })
+      assertWriteMode(true, folder)
+      if (isBlockedWritePath(folder) || !isAllowedArtifactRoot(folder)) return reply.code(403).send({ error: 'Plan folder blocked' })
       const safeSlug = title.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-')
       const filename = `${Date.now()}-${safeSlug}.md`
       const relPath = `${folder.replace(/\/$/, '')}/${filename}`
-      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, sourceId)
+      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, resolveTargetSourceId(sourceId))
       fs.mkdirSync(path.dirname(fullPath), { recursive: true })
       if (fs.existsSync(fullPath)) return reply.code(409).send({ error: 'Plan already exists' })
       fs.writeFileSync(fullPath, content, 'utf-8')
       return { status: 'created', sourceId: resolvedSourceId, path: relPath }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.post<{ Body: { sourceId?: string; path: string; content: string; separator?: string; reason?: string } }>('/api/append-file', async (request, reply) => {
+    try {
+      const { sourceId, path: relPath, content, separator = '\n\n' } = request.body
+      assertWriteMode(false, relPath)
+      if (!relPath || typeof content !== 'string') return reply.code(400).send({ error: 'Path and content required' })
+      if (isBlockedWritePath(relPath) || !isAllowedSafeWriteRoot(relPath)) return reply.code(403).send({ error: 'Append path blocked' })
+      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, resolveTargetSourceId(sourceId))
+      if (!fs.existsSync(fullPath)) return reply.code(404).send({ error: 'File not found' })
+      const appended = `${separator}${content}`
+      fs.appendFileSync(fullPath, appended, 'utf-8')
+      return { status: 'ok', sourceId: resolvedSourceId, path: relPath, bytesAppended: Buffer.byteLength(appended, 'utf8') }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }
@@ -266,16 +398,6 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
       await indexer.buildIndex()
       searcher = new VaultSearcher(indexer.getDocs())
 
-      return result
-    } catch (err) {
-      return reply.code(400).send({ error: String(err) })
-    }
-  })
-
-  fastify.post<{ Body: { path: string; content: string; sourceId?: string } }>('/api/create-inbox-note', async (request, reply) => {
-    try {
-      const { path, content, sourceId } = request.body
-      const result = await createInboxNote(path, content, sourceId)
       return result
     } catch (err) {
       return reply.code(400).send({ error: String(err) })

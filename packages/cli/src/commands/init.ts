@@ -23,6 +23,9 @@ export async function initCommand(): Promise<void> {
     vaultPath: '',
     localPort: 3052,
     mode: 'read_create_append',
+    activeSourcesMode: 'all',
+    activeSourceIds: [],
+    writeMode: 'safeWrites',
     ignorePatterns: ['.git/**', '.obsidian/**', 'node_modules/**', '.buildflowignore']
   }
 

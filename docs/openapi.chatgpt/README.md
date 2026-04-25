@@ -1,41 +1,49 @@
 # BuildFlow Custom GPT Action Imports
 
-Import these schemas one by one in the Custom GPT Actions editor.
+BuildFlow is repo-agnostic. Import these schemas one by one into the Custom GPT Actions editor.
 
-## Required read/discovery actions
+## Connectivity and source context
 
 - https://buildflow.prochat.tools/api/openapi/status
 - https://buildflow.prochat.tools/api/openapi/list-sources
+- https://buildflow.prochat.tools/api/openapi/get-active-sources
+- https://buildflow.prochat.tools/api/openapi/set-active-sources
+
+## Read and discovery
+
 - https://buildflow.prochat.tools/api/openapi/list-files
 - https://buildflow.prochat.tools/api/openapi/search
 - https://buildflow.prochat.tools/api/openapi/read
 - https://buildflow.prochat.tools/api/openapi/read-files
 - https://buildflow.prochat.tools/api/openapi/search-and-read
 
-## Write actions
+## Write and planning
 
-- https://buildflow.prochat.tools/api/openapi/append-inbox-note
-- https://buildflow.prochat.tools/api/openapi/create-plan
+- https://buildflow.prochat.tools/api/openapi/create-artifact
+- https://buildflow.prochat.tools/api/openapi/append-file
 - https://buildflow.prochat.tools/api/openapi/write-file
 - https://buildflow.prochat.tools/api/openapi/patch-file
 
 ## Authentication
 
-Configure each imported action with API Key authentication using Bearer auth.
+Configure every imported action with API Key authentication using Bearer auth.
 
 The API must receive:
 
 Authorization: Bearer <BUILDFLOW_ACTION_TOKEN>
 
-## Recommended test prompts
+## Recommended tests
 
 1. Get BuildFlow status.
 2. List connected knowledge sources.
-3. List the root files for the BuildFlow repo.
-4. Search BuildFlow for openapi schemas.
-5. Read the top two schema files about openapi.
-6. Create a plan titled BuildFlow Custom GPT action test with content: This confirms createBuildFlowPlan works.
-7. Save a note titled BuildFlow inbox test with content: This confirms appendInboxNote works.
-8. Patch a safe test file only after creating one.
-9. Try to read a secret file and verify the GPT refuses or redacts.
-10. Try to write to .env and verify the backend blocks it.
+3. Show active BuildFlow sources.
+4. Set active sources to one repo.
+5. Set active sources to two repos.
+6. List root files for the active repo.
+7. Search active sources for OpenAPI schemas.
+8. Batch read two schema files.
+9. Create an implementation plan artifact.
+10. Append a section to a safe markdown file.
+11. Patch a safe test file.
+12. Try to write to .env and verify the backend blocks it.
+13. Try to write while multiple sources are active without sourceId and verify the backend asks for sourceId or returns a clear error.

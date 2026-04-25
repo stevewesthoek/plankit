@@ -389,7 +389,6 @@ openssl rand -hex 32
 - `POST /api/actions/search` — Search local vault
 - `POST /api/actions/read` — Read file from vault
 - `POST /api/actions/search-and-read` — Combined search + read
-- `POST /api/actions/append-inbox-note` — Create personal inbox note
 
 **Public schema:**
 - `GET /api/openapi` — Returns OpenAPI 3.1.0 schema for ChatGPT import

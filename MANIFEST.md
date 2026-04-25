@@ -12,7 +12,6 @@ BuildFlow is a **local-first system** that connects your Markdown vault to ChatG
 
 - **Search** local notes from ChatGPT
 - **Read** files with context from ChatGPT
-- **Create** personal inbox notes from ChatGPT
 - **Keep everything local** (all files stay on your machine)
 - **Transport abstraction** (enables relay-backed or SaaS-hosted backends in future)
 
@@ -160,7 +159,6 @@ GET /health               # Health check
 POST /api/actions/search          # Search vault (ChatGPT)
 POST /api/actions/read            # Read file (ChatGPT)
 POST /api/actions/search-and-read # Combined search + read (ChatGPT)
-POST /api/actions/append-inbox-note # Create personal note (ChatGPT)
 GET /api/openapi                  # OpenAPI schema for ChatGPT
 GET /health                       # Web app health check
 ```

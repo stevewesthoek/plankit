@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { path, sourceId } = body
+    const { path, sourceId, sourceIds, maxBytes } = body
 
     if (!path) {
       return NextResponse.json(
@@ -20,6 +20,12 @@ export async function POST(request: NextRequest) {
     const payload: Record<string, unknown> = { path }
     if (sourceId) {
       payload.sourceId = sourceId
+    }
+    if (sourceIds) {
+      payload.sourceIds = sourceIds
+    }
+    if (maxBytes) {
+      payload.maxBytes = maxBytes
     }
 
     const data = await executeAction('/api/read', payload)

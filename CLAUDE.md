@@ -28,7 +28,6 @@ Repo-specific instructions and durable context for Claude Code.
 - `apps/web/` — Next.js web app with API routes
 - `apps/web/src/app/api/actions/` — ChatGPT Custom Actions (read-only)
 - `apps/web/src/app/api/tools/` — Internal tools (not exposed to ChatGPT)
-- `docs/openapi.chatgpt.json` — Static OpenAPI export kept in sync with the live `/api/openapi` route
 - `packages/shared/` — Shared types
 - `packages/cli/` — CLI agent
 - `mind/` — **Symlink** to Mind repo (Obsidian vault); write personal notes here
@@ -38,7 +37,6 @@ Repo-specific instructions and durable context for Claude Code.
 - `POST /api/actions/search` — Search local vault (read-only)
 - `POST /api/actions/read` — Read file (read-only)
 - `POST /api/actions/search-and-read` — Combined search + read (read-only)
-- `POST /api/actions/append-inbox-note` — Create personal note in Mind inbox (write to `mind/01-inbox/`)
 - `GET /api/openapi` — Dynamic OpenAPI schema
 
 ## Commands
@@ -70,7 +68,7 @@ curl -s -X POST https://buildflow.prochat.tools/api/actions/search \
 ## Integrations
 
 - **Cloudflare**: `buildflow.prochat.tools` public hostname (tunnel only, not in repo)
-- **ChatGPT Custom GPT**: Imports the live `/api/openapi` schema or the synced `docs/openapi.chatgpt.json` export for Custom Actions
+- **ChatGPT Custom GPT**: Imports the live `/api/openapi` schema or the per-action action URLs for Custom Actions
 - **Local brain CLI**: Agent on port 3052 (separate repo, separate install)
 - **Relay server**: Port 3053 (bridges web ↔ agent)
 

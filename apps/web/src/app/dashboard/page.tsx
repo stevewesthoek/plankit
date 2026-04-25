@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import type { FormEvent } from 'react'
-import type { KnowledgeSource } from '@buildflow/shared'
+import type { KnowledgeSource, WriteMode, ActiveSourcesMode } from '@buildflow/shared'
 
 export default function Dashboard() {
   const [sources, setSources] = useState<KnowledgeSource[]>([])
@@ -14,6 +14,9 @@ export default function Dashboard() {
   const [sourceId, setSourceId] = useState('')
   const [mutationLoading, setMutationLoading] = useState(false)
   const [mutationError, setMutationError] = useState<string | null>(null)
+  const [activeMode, setActiveMode] = useState<ActiveSourcesMode>('all')
+  const [activeSourceIds, setActiveSourceIds] = useState<string[]>([])
+  const [writeMode, setWriteMode] = useState<WriteMode>('safeWrites')
 
   const fetchSources = async () => {
     try {
@@ -26,12 +29,26 @@ export default function Dashboard() {
       const data = await response.json()
       setSources(data.sources || [])
       setAgentConnected(true)
+      const activeResponse = await fetch('/api/agent/active-sources')
+      const activeData = await activeResponse.json().catch(() => ({}))
+      setActiveMode(activeData.mode || 'all')
+      setActiveSourceIds(activeData.activeSourceIds || [])
+      const writeResponse = await fetch('/api/agent/write-mode')
+      const writeData = await writeResponse.json().catch(() => ({}))
+      setWriteMode(writeData.writeMode || 'safeWrites')
     } catch (err) {
       setError(String(err))
       setAgentConnected(false)
     } finally {
       setLoading(false)
     }
+  }
+
+  const toggleActiveSource = async (sourceId: string) => {
+    const next = activeSourceIds.includes(sourceId)
+      ? activeSourceIds.filter(id => id !== sourceId)
+      : [...activeSourceIds, sourceId]
+    await mutateSources('/api/agent/active-sources', { mode: next.length > 1 ? 'multi' : 'single', activeSourceIds: next })
   }
 
   useEffect(() => {
@@ -84,6 +101,15 @@ export default function Dashboard() {
       setSourceLabel('')
       setSourceId('')
     }
+  }
+
+  const handleSetMode = async (mode: ActiveSourcesMode) => {
+    const nextIds = mode === 'all' ? [] : activeSourceIds.slice(0, mode === 'single' ? 1 : Math.max(activeSourceIds.length, 1))
+    await mutateSources('/api/agent/active-sources', { mode, activeSourceIds: nextIds })
+  }
+
+  const handleWriteMode = async (nextMode: WriteMode) => {
+    await mutateSources('/api/agent/write-mode', { writeMode: nextMode })
   }
 
   return (
@@ -179,7 +205,18 @@ export default function Dashboard() {
                     <div className={`px-3 py-1 rounded text-xs font-semibold ${source.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
                       {source.enabled ? 'Enabled' : 'Disabled'}
                     </div>
+                    <div className={`px-3 py-1 rounded text-xs font-semibold ${activeSourceIds.includes(source.id) ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'}`}>
+                      {activeSourceIds.includes(source.id) ? 'Active' : 'Inactive'}
+                    </div>
                     <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={mutationLoading || !source.enabled}
+                        onClick={() => toggleActiveSource(source.id)}
+                        className="rounded border border-blue-300 px-3 py-1 text-xs font-medium text-blue-700 disabled:opacity-50"
+                      >
+                        Toggle Active
+                      </button>
                       <button
                         type="button"
                         disabled={mutationLoading}
@@ -221,6 +258,21 @@ export default function Dashboard() {
           <p className="text-blue-700 text-xs mt-3">
             Set mode via <code className="bg-blue-100 px-1 rounded">BUILDFLOW_BACKEND_MODE</code> environment variable.
           </p>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Active Context</h2>
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button className={`px-3 py-1 rounded text-sm ${activeMode === 'single' ? 'bg-gray-900 text-white' : 'bg-gray-100'}`} onClick={() => handleSetMode('single')} type="button">single</button>
+            <button className={`px-3 py-1 rounded text-sm ${activeMode === 'multi' ? 'bg-gray-900 text-white' : 'bg-gray-100'}`} onClick={() => handleSetMode('multi')} type="button">multi</button>
+            <button className={`px-3 py-1 rounded text-sm ${activeMode === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100'}`} onClick={() => handleSetMode('all')} type="button">all</button>
+          </div>
+          <div className="text-sm text-gray-600">Active source ids: {activeSourceIds.length > 0 ? activeSourceIds.join(', ') : 'all enabled sources'}</div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" className={`px-3 py-1 rounded text-sm ${writeMode === 'readOnly' ? 'bg-red-100 text-red-800' : 'bg-gray-100'}`} onClick={() => handleWriteMode('readOnly')}>readOnly</button>
+            <button type="button" className={`px-3 py-1 rounded text-sm ${writeMode === 'artifactsOnly' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100'}`} onClick={() => handleWriteMode('artifactsOnly')}>artifactsOnly</button>
+            <button type="button" className={`px-3 py-1 rounded text-sm ${writeMode === 'safeWrites' ? 'bg-green-100 text-green-800' : 'bg-gray-100'}`} onClick={() => handleWriteMode('safeWrites')}>safeWrites</button>
+          </div>
         </div>
 
         {/* Getting Started */}

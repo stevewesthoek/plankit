@@ -5,19 +5,27 @@ export type SearchResult = {
   score: number
   snippet: string
   modifiedAt: string
+  sizeBytes?: number
 }
 
 export type FileContent = {
+  sourceId?: string
   path: string
   content: string
+  truncated?: boolean
+  sizeBytes?: number
+  modifiedAt?: string
+  error?: string
 }
 
 export type FileCreated = {
+  sourceId?: string
   path: string
   created: boolean
 }
 
 export type FileAppended = {
+  sourceId?: string
   path: string
   appended: boolean
 }
@@ -40,7 +48,11 @@ export type KnowledgeSource = {
   label: string
   path: string
   enabled: boolean
+  type?: string
 }
+
+export type ActiveSourcesMode = 'single' | 'multi' | 'all'
+export type WriteMode = 'readOnly' | 'artifactsOnly' | 'safeWrites'
 
 export type ToolCallMessage = {
   id: string

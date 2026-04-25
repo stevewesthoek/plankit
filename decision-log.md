@@ -34,5 +34,4 @@ Durable decisions for buildflow. Append-only archive.
 - Path: Personal note creation writes to `mind/01-inbox/` (via symlink from brain vault perspective) = `/Users/Office/Repos/stevewesthoek/mind/01-inbox/` (real path)
 - Safety: Symlink is valid relative path; local agent sees `mind/` as directory within connected vault; writes permitted
 - Removed: `.unprocessed/` subfolder (not needed; captures land directly in `01-inbox/` same as n8n workflow); old `brain/notes/inbox/` removed
-- Impact: Append-inbox-note writes to correct inbox; captures co-exist with n8n webhook captures; user reviews all in one place in Obsidian
-
+- Impact: Legacy personal-note writes were routed to the correct inbox; captures co-exist with n8n webhook captures; user reviews all in one place in Obsidian

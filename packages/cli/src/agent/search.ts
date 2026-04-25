@@ -12,10 +12,13 @@ export class VaultSearcher {
     })
   }
 
-  search(query: string, limit: number = 10): SearchResult[] {
-    const results = this.fuse.search(query, { limit })
+  search(query: string, limit: number = 10, sourceIds?: string[]): SearchResult[] {
+    const results = this.fuse.search(query, { limit: sourceIds && sourceIds.length > 0 ? undefined : limit })
+    const filtered = sourceIds && sourceIds.length > 0
+      ? results.filter(result => sourceIds.includes(result.item.sourceId)).slice(0, limit)
+      : results
 
-    return results.map(result => ({
+    return filtered.map(result => ({
       sourceId: result.item.sourceId,
       path: result.item.path,
       title: result.item.title,

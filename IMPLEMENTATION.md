@@ -50,7 +50,6 @@ This is a fully-implemented MVP ready for testing and refinement. The architectu
 | `POST /api/actions/search` | ChatGPT Custom Action: Search vault (Bearer token required) |
 | `POST /api/actions/read` | ChatGPT Custom Action: Read file (Bearer token required) |
 | `POST /api/actions/search-and-read` | ChatGPT Custom Action: Combined search + read |
-| `POST /api/actions/append-inbox-note` | ChatGPT Custom Action: Create personal note (writes to mind/01-inbox/) |
 | `GET /api/openapi` | OpenAPI 3.1.0 schema for ChatGPT import |
 | `GET /api/health` | Health check (200 if running) |
 | `GET /api/relay/health` | Relay server health check (port 3053) |
