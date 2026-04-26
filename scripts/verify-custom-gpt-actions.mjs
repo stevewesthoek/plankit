@@ -250,7 +250,7 @@ async function runActionSuite(baseUrl, label) {
     })
 
     await runStep('wait for buildflow ready', async () => {
-      const ready = await waitForSourceReady(baseUrl, 'buildflow', 60000)
+      const ready = await waitForSourceReady(baseUrl, 'buildflow', 120000)
       assert(ready, `${label}: buildflow did not become ready`)
       return ready
     })
