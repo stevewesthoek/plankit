@@ -33,7 +33,7 @@ const SAFE_ROOT_WRITE_FILES = new Set([
 
 // Root docs are allowlisted because they are high-impact project files; arbitrary root files stay blocked.
 const ARTIFACT_WRITE_ROOTS = ['docs/product', '.buildflow']
-const SAFE_WRITE_ROOTS = ['docs/product', 'docs/plans', 'docs/prompts', 'docs/notes', '.buildflow']
+const SAFE_WRITE_ROOTS = ['docs/product', 'docs/plans', 'docs/prompts', 'docs/notes', 'docs/buildflow', '.buildflow']
 const BLOCKED_DIRECTORY_NAMES = new Set(['node_modules', '.next', 'dist', 'build', 'coverage'])
 const ALLOWED_DOTFILES = new Set(['.github', '.env.example', '.gitignore', '.buildflow', '.nvmrc', '.prettierrc', '.eslintrc'])
 

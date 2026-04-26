@@ -3,6 +3,14 @@
 import { useState, useEffect } from 'react'
 import type { FormEvent } from 'react'
 import type { KnowledgeSource, WriteMode, ActiveSourcesMode } from '@buildflow/shared'
+import {
+  getAgentHealthLabel,
+  getAgentHealthClassName,
+  getSourceEnabledClassName,
+  getSourceIndexStatusClassName,
+  getSourceIndexStatusLabel,
+  getSourceActiveClassName
+} from './helpers'
 
 const TERMINAL_INDEX_STATUSES = new Set(['ready', 'failed', 'disabled'])
 
@@ -219,9 +227,9 @@ export default function Dashboard() {
         <div className="bg-white rounded-lg shadow p-6 mb-8">
           <h2 className="text-lg font-bold text-gray-900 mb-4">Connected Agent</h2>
           <div className="flex items-center gap-3">
-            <div className={`w-3 h-3 rounded-full ${agentConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+            <div className={`w-3 h-3 rounded-full ${getAgentHealthClassName(agentConnected)}`} />
             <span className="text-gray-700">
-              {agentConnected ? 'Agent connected' : 'Agent not connected'}
+              {getAgentHealthLabel(agentConnected)}
             </span>
           </div>
         </div>
@@ -315,26 +323,13 @@ export default function Dashboard() {
                     <div className="text-xs text-gray-500 mt-1">ID: {source.id}</div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
-                    <div className={`px-3 py-1 rounded text-xs font-semibold ${source.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                    <div className={`px-3 py-1 rounded text-xs font-semibold ${getSourceEnabledClassName(source.enabled)}`}>
                       {source.enabled ? 'Enabled' : 'Disabled'}
                     </div>
-                    <div className={`px-3 py-1 rounded text-xs font-semibold ${
-                      source.indexStatus === 'ready'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : source.indexStatus === 'indexing'
-                          ? 'bg-blue-100 text-blue-800'
-                          : source.indexStatus === 'pending'
-                            ? 'bg-amber-100 text-amber-800'
-                            : source.indexStatus === 'failed'
-                              ? 'bg-red-100 text-red-800'
-                              : source.indexStatus === 'disabled'
-                                ? 'bg-gray-100 text-gray-600'
-                                : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {source.indexStatus || 'unknown'}
-                      {typeof source.indexedFileCount === 'number' ? ` · ${source.indexedFileCount} files` : ''}
+                    <div className={`px-3 py-1 rounded text-xs font-semibold ${getSourceIndexStatusClassName(source.indexStatus)}`}>
+                      {getSourceIndexStatusLabel(source)}
                     </div>
-                    <div className={`px-3 py-1 rounded text-xs font-semibold ${activeSourceIds.includes(source.id) ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'}`}>
+                    <div className={`px-3 py-1 rounded text-xs font-semibold ${getSourceActiveClassName(activeSourceIds.includes(source.id))}`}>
                       {activeSourceIds.includes(source.id) ? 'Active' : 'Inactive'}
                     </div>
                     <div className="flex gap-2">
