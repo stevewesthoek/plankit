@@ -39,7 +39,7 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
       if (!relPath || !isAllowedArtifactRoot(relPath)) {
         throw new Error('Write mode blocks non-artifact paths')
       }
-      if (!relPath.startsWith('docs/buildflow') && !relPath.startsWith('.buildflow')) {
+      if (!relPath.startsWith('docs/product') && !relPath.startsWith('.buildflow')) {
         throw new Error('Write mode blocks non-artifact paths')
       }
     }
@@ -269,15 +269,15 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
     try {
       const { sourceId, artifactType, title, content, folder, filename } = request.body
       const defaults: Record<string, string> = {
-        implementation_plan: 'docs/buildflow/plans',
-        codex_prompt: 'docs/buildflow/prompts/codex',
-        claude_prompt: 'docs/buildflow/prompts/claude',
-        architecture_note: 'docs/buildflow/architecture',
-        research_summary: 'docs/buildflow/research',
-        test_plan: 'docs/buildflow/testing',
-        migration_plan: 'docs/buildflow/migrations',
-        task_brief: 'docs/buildflow/tasks',
-        general_doc: 'docs/buildflow/notes'
+        implementation_plan: 'docs/product/plans',
+        codex_prompt: 'docs/product/prompts/codex',
+        claude_prompt: 'docs/product/prompts/claude',
+        architecture_note: 'docs/product/architecture',
+        research_summary: 'docs/product/research',
+        test_plan: 'docs/product/testing',
+        migration_plan: 'docs/product/migrations',
+        task_brief: 'docs/product/tasks',
+        general_doc: 'docs/product/notes'
       }
       const targetFolder = folder || defaults[artifactType]
       if (!targetFolder) return reply.code(400).send({ error: 'Unknown artifact type' })
@@ -382,7 +382,7 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
 
   fastify.post<{ Body: { sourceId?: string; title: string; content: string; folder?: string } }>('/api/create-plan', async (request, reply) => {
     try {
-      const { sourceId, title, content, folder = 'docs/buildflow/plans' } = request.body
+      const { sourceId, title, content, folder = 'docs/product/plans' } = request.body
       if (!title || !content) return reply.code(400).send({ error: 'Title and content required' })
       assertWriteMode(true, folder)
       if (isBlockedWritePath(folder) || !isAllowedArtifactRoot(folder)) return reply.code(403).send({ error: 'Plan folder blocked' })

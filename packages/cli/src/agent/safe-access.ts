@@ -20,8 +20,20 @@ const BLOCKED_WRITE_PATTERNS = [
   /(^|\/)id_ed25519$/i
 ]
 
-const ARTIFACT_WRITE_ROOTS = ['docs/buildflow', '.buildflow']
-const SAFE_WRITE_ROOTS = ['docs/buildflow', 'docs/plans', 'docs/prompts', 'docs/notes', '.buildflow']
+const SAFE_ROOT_WRITE_FILES = new Set([
+  'README.md',
+  'DESIGN.md',
+  'CHANGELOG.md',
+  'CONTRIBUTING.md',
+  'LICENSE',
+  'ROADMAP.md',
+  'SECURITY.md',
+  'CODE_OF_CONDUCT.md'
+])
+
+// Root docs are allowlisted because they are high-impact project files; arbitrary root files stay blocked.
+const ARTIFACT_WRITE_ROOTS = ['docs/product', '.buildflow']
+const SAFE_WRITE_ROOTS = ['docs/product', 'docs/plans', 'docs/prompts', 'docs/notes', '.buildflow']
 const BLOCKED_DIRECTORY_NAMES = new Set(['node_modules', '.next', 'dist', 'build', 'coverage'])
 const ALLOWED_DOTFILES = new Set(['.github', '.env.example', '.gitignore', '.buildflow', '.nvmrc', '.prettierrc', '.eslintrc'])
 
@@ -92,11 +104,13 @@ export function isBlockedWritePath(relativePath: string): boolean {
 
 export function isAllowedArtifactRoot(relativePath: string): boolean {
   const normalized = relativePath.replace(/\\/g, '/')
+  if (!normalized.includes('/') && SAFE_ROOT_WRITE_FILES.has(normalized)) return true
   return ARTIFACT_WRITE_ROOTS.some(root => normalized === root || normalized.startsWith(`${root}/`))
 }
 
 export function isAllowedSafeWriteRoot(relativePath: string): boolean {
   const normalized = relativePath.replace(/\\/g, '/')
+  if (!normalized.includes('/') && SAFE_ROOT_WRITE_FILES.has(normalized)) return true
   return SAFE_WRITE_ROOTS.some(root => normalized === root || normalized.startsWith(`${root}/`))
 }
 
