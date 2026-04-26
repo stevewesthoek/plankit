@@ -42,14 +42,12 @@ function resolveReturnedPath(returnedPath) {
 async function writeRootDesign(designPath) {
   const existed = fs.existsSync(designPath)
   const originalContent = existed ? fs.readFileSync(designPath, 'utf8') : ''
-  const tempContent = existed
-    ? `${originalContent}\n\nBuildFlow verifier root DESIGN.md write contract smoke test.`
-    : 'BuildFlow verifier root DESIGN.md write contract smoke test.'
+  const tempContent = 'BuildFlow verifier root DESIGN.md write contract smoke test.'
   const result = await requestJson(`${BASE_URL}/api/actions/apply-file-change`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      changeType: existed ? 'overwrite' : 'create',
+      changeType: 'overwrite',
       sourceId: 'buildflow',
       path: 'DESIGN.md',
       content: tempContent,
@@ -79,7 +77,23 @@ async function writeRootDesign(designPath) {
   assert(readBack.response.status === 200, `read-context should return 200 for DESIGN.md, got ${readBack.response.status}`)
   const files = Array.isArray(readBack.json.files) ? readBack.json.files : []
   const design = files.find(entry => entry.path === 'DESIGN.md')
-  assert(design && typeof design.content === 'string' && design.content === tempContent, 'DESIGN.md read-back mismatch')
+  if (!design) {
+    throw new Error(`DESIGN.md not found in read-back response. Available files: ${files.map(f => f.path).join(', ')}`)
+  }
+  if (typeof design.content !== 'string') {
+    throw new Error(`DESIGN.md content is not a string, got ${typeof design.content}`)
+  }
+  if (design.content !== tempContent) {
+    const expectedLines = tempContent.split('\n')
+    const actualLines = design.content.split('\n')
+    const mismatchLines = []
+    for (let i = 0; i < Math.max(expectedLines.length, actualLines.length); i++) {
+      if (expectedLines[i] !== actualLines[i]) {
+        mismatchLines.push(`Line ${i}: expected ${JSON.stringify(expectedLines[i])}, got ${JSON.stringify(actualLines[i])}`)
+      }
+    }
+    throw new Error(`DESIGN.md read-back mismatch:\n${mismatchLines.slice(0, 10).join('\n')}`)
+  }
 
   if (existed) {
     cleanup(diskPath, originalContent)
