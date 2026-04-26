@@ -40,7 +40,7 @@ function resolveReturnedPath(returnedPath) {
 }
 
 async function writeTestFile() {
-  const testPath = 'docs/buildflow/verify-write-contract-test.md'
+  const testPath = 'docs/product/verify-write-contract-test.md'
   const testContent = 'BuildFlow write contract verification test file.'
   const result = await requestJson(`${BASE_URL}/api/actions/apply-file-change`, {
     method: 'POST',
