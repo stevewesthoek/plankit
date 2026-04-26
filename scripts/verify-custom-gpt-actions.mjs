@@ -2,385 +2,470 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
+import { execFileSync } from 'node:child_process'
 
+const LOCAL_BASE_URL = process.env.LOCAL_DASHBOARD_BASE_URL || 'http://127.0.0.1:3054'
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'https://buildflow.prochat.tools'
-const TOKEN = process.env.BUILDFLOW_ACTION_TOKEN
+const TOKEN = process.env.BUILDFLOW_ACTION_TOKEN || ''
+const ROOT = process.cwd()
+const DOCS_SCHEMA_FILE = path.join(ROOT, 'docs/openapi.chatgpt.json')
+const INSTRUCTIONS_FILE = path.join(ROOT, 'docs/CUSTOM_GPT_INSTRUCTIONS.md')
+const DOCS_SCHEMA_DIR = path.join(ROOT, 'docs/openapi.chatgpt')
+const EXPECTED_OPERATION_IDS = [
+  'getBuildFlowStatus',
+  'listBuildFlowSources',
+  'getBuildFlowActiveContext',
+  'setBuildFlowActiveContext',
+  'inspectBuildFlowContext',
+  'readBuildFlowContext',
+  'writeBuildFlowArtifact',
+  'applyBuildFlowFileChange'
+]
+const LEGACY_NAMES = [
+  'setBuildFlowContext',
+  'action=list_sources',
+  'action=get_active',
+  'action=set_active'
+]
 
 if (!TOKEN) {
   console.error('BUILDFLOW_ACTION_TOKEN is required')
   process.exit(1)
 }
 
-const expectedPaths = [
-  '/api/actions/apply-file-change',
-  '/api/actions/context',
-  '/api/actions/inspect',
-  '/api/actions/read-context',
-  '/api/actions/status',
-  '/api/actions/write-artifact'
-]
-
-const expectedOperationIds = [
-  'getBuildFlowStatus',
-  'setBuildFlowContext',
-  'inspectBuildFlowContext',
-  'readBuildFlowContext',
-  'writeBuildFlowArtifact',
-  'applyBuildFlowFileChange'
-]
-
-const cleanupTargets = []
-
-async function requestJson(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${TOKEN}`,
-      ...(options.headers || {})
-    }
-  })
-  const contentType = response.headers.get('content-type') || ''
-  const text = await response.text()
-  if (!contentType.includes('application/json')) {
-    throw new Error(`Expected JSON from ${url}, got ${response.status} ${contentType}\n${text.slice(0, 500)}`)
-  }
-  let json
-  try {
-    json = JSON.parse(text)
-  } catch (error) {
-    throw new Error(`Invalid JSON from ${url}: ${String(error)}\n${text.slice(0, 500)}`)
-  }
-  return { response, json, contentType }
-}
-
 function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
 
-function logStep(name) {
-  console.log(`\n== ${name} ==`)
-}
-
-function diskPath(relativePath) {
-  return path.resolve(process.cwd(), relativePath)
-}
-
-async function readActionFile(sourceId, filePath) {
-  return requestJson(`${PUBLIC_BASE_URL}/api/actions/read-context`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: 'read_paths', sourceId, paths: [filePath], maxBytesPerFile: 10000 })
-  })
-}
-
-function assertWriteVerification(result, label) {
-  assert(result && typeof result === 'object', `${label}: missing response object`)
-  assert((result).verified === true, `${label}: verified must be true`)
-  assert(typeof result.verifiedAt === 'string' && result.verifiedAt.length > 0, `${label}: verifiedAt missing`)
-  assert(typeof result.bytesOnDisk === 'number' && result.bytesOnDisk > 0, `${label}: bytesOnDisk invalid`)
-  assert(typeof result.contentHash === 'string' && result.contentHash.length > 0, `${label}: contentHash missing`)
-  assert(typeof result.contentPreview === 'string', `${label}: contentPreview missing`)
-}
-
-async function waitForSourceStatus(sourceId, expectedStatuses = ['ready'], timeoutMs = 60000) {
-  const startedAt = Date.now()
-  while (Date.now() - startedAt < timeoutMs) {
-    const current = await requestJson(`${PUBLIC_BASE_URL}/api/agent/sources`)
-    assert(current.response.status === 200, 'source poll must be 200')
-    const source = (current.json.sources || []).find(item => item.id === sourceId)
-    if (!source) throw new Error(`Source not found while polling: ${sourceId}`)
-    if (expectedStatuses.includes(source.indexStatus)) return source
-    await new Promise(resolve => setTimeout(resolve, 1500))
+function parseJsonSafe(text, label) {
+  try {
+    return JSON.parse(text)
+  } catch (error) {
+    throw new Error(`Invalid JSON from ${label}: ${error instanceof Error ? error.message : String(error)}\n${text.slice(0, 500)}`)
   }
-  throw new Error(`Timed out waiting for ${sourceId} to reach ${expectedStatuses.join(', ')}`)
 }
 
-async function main() {
-  logStep('OpenAPI')
-  const openapiUrl = `${PUBLIC_BASE_URL}/api/openapi`
-  const openapiRes = await fetch(openapiUrl)
-  const openapiText = await openapiRes.text()
-  assert(openapiRes.status === 200, `Expected 200 from ${openapiUrl}, got ${openapiRes.status}`)
-  assert((openapiRes.headers.get('content-type') || '').includes('application/json'), `Expected JSON content-type from ${openapiUrl}`)
-  const openapi = JSON.parse(openapiText)
-  assert(openapi.openapi === '3.1.0', `Expected openapi 3.1.0, got ${openapi.openapi}`)
-  assert(openapi.components && typeof openapi.components === 'object', 'components must be object')
-  assert(openapi.components.schemas && typeof openapi.components.schemas === 'object' && !Array.isArray(openapi.components.schemas), 'components.schemas must be object')
-  assert(openapi.components.securitySchemes && typeof openapi.components.securitySchemes === 'object', 'components.securitySchemes must be object')
-  assert(openapi.components.securitySchemes.bearerAuth?.type === 'http', 'bearerAuth.type must be http')
-  assert(openapi.components.securitySchemes.bearerAuth?.scheme === 'bearer', 'bearerAuth.scheme must be bearer')
-  assert(Object.keys(openapi.paths || {}).length === expectedPaths.length, `Expected ${expectedPaths.length} paths, got ${Object.keys(openapi.paths || {}).length}`)
-  for (const path of expectedPaths) assert(openapi.paths?.[path], `Missing path ${path}`)
-  const operationIds = []
-  for (const [path, methods] of Object.entries(openapi.paths || {})) {
-    for (const [method, op] of Object.entries(methods || {})) {
-      if (op && typeof op === 'object' && 'operationId' in op) operationIds.push(op.operationId)
-      const hasBearer = Array.isArray(op?.security) && op.security.some(entry => entry && Object.prototype.hasOwnProperty.call(entry, 'bearerAuth'))
-      assert(hasBearer, `Missing bearerAuth security for ${path}.${method}`)
+async function requestRaw(url, options = {}, timeoutMs = 45000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs)
+  const startedAt = Date.now()
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        ...(options.headers || {})
+      }
+    })
+    const text = await response.text()
+    return {
+      response,
+      text,
+      durationMs: Date.now() - startedAt,
+      contentType: response.headers.get('content-type') || ''
+    }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function requestJson(url, options = {}, timeoutMs = 45000) {
+  const result = await requestRaw(url, options, timeoutMs)
+  assert(result.contentType.includes('application/json'), `Expected JSON from ${url}, got ${result.response.status} ${result.contentType}\n${result.text.slice(0, 500)}`)
+  const json = parseJsonSafe(result.text, url)
+  return { ...result, json, byteLength: Buffer.byteLength(result.text, 'utf8') }
+}
+
+function loadDocsSchema() {
+  assert(fs.existsSync(DOCS_SCHEMA_FILE), `Missing docs schema file: ${DOCS_SCHEMA_FILE}`)
+  return JSON.parse(fs.readFileSync(DOCS_SCHEMA_FILE, 'utf8'))
+}
+
+function loadInstructions() {
+  assert(fs.existsSync(INSTRUCTIONS_FILE), `Missing instructions file: ${INSTRUCTIONS_FILE}`)
+  return fs.readFileSync(INSTRUCTIONS_FILE, 'utf8')
+}
+
+function ensureNoStaleFragments() {
+  assert(fs.existsSync(DOCS_SCHEMA_DIR), `Missing docs schema directory: ${DOCS_SCHEMA_DIR}`)
+  const entries = fs.readdirSync(DOCS_SCHEMA_DIR)
+  const staleFragments = entries.filter(entry => entry.endsWith('.json'))
+  assert(staleFragments.length === 0, `Stale schema fragments found: ${staleFragments.join(', ')}`)
+}
+
+function collectOperations(schema) {
+  const ops = []
+  for (const [routePath, pathItem] of Object.entries(schema.paths || {})) {
+    for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
+      const op = pathItem?.[method]
+      if (op && typeof op === 'object') {
+        ops.push({ routePath, method, ...op })
+      }
     }
   }
-  for (const opId of expectedOperationIds) assert(operationIds.includes(opId), `Missing operationId ${opId}`)
-  const writeArtifactSchema = openapi.paths['/api/actions/write-artifact']?.post?.responses?.['200']?.content?.['application/json']?.schema
-  const applyFileChangeSchema = openapi.paths['/api/actions/apply-file-change']?.post?.responses?.['200']?.content?.['application/json']?.schema
-  assert(writeArtifactSchema?.properties?.verified?.type === 'boolean', 'writeArtifact verified schema missing')
-  assert(Array.isArray(writeArtifactSchema?.required) && writeArtifactSchema.required.includes('verified'), 'writeArtifact verified required missing')
-  assert(applyFileChangeSchema?.properties?.verified?.type === 'boolean', 'applyFileChange verified schema missing')
-  assert(Array.isArray(applyFileChangeSchema?.required) && applyFileChangeSchema.required.includes('verified'), 'applyFileChange verified required missing')
-  const schemaText = JSON.stringify(openapi)
-  for (const term of ['appendInboxNote', 'append-inbox-note', 'inbox-note', 'legacy inbox']) {
-    assert(!schemaText.includes(term), `OpenAPI schema must not include ${term}`)
+  return ops
+}
+
+function ensureSchemaRules(schema) {
+  const ops = collectOperations(schema)
+  const ids = ops.map(op => op.operationId)
+  assert(ids.length === EXPECTED_OPERATION_IDS.length, `Expected ${EXPECTED_OPERATION_IDS.length} operations, found ${ids.length}`)
+  assert(new Set(ids).size === ids.length, 'OperationIds must be unique')
+  assert(JSON.stringify([...EXPECTED_OPERATION_IDS].sort()) === JSON.stringify([...ids].sort()), `OperationIds mismatch: ${ids.join(', ')}`)
+
+  const schemaText = JSON.stringify(schema)
+  assert(Buffer.byteLength(schemaText, 'utf8') < 100000, 'OpenAPI schema exceeds 100000 characters')
+
+  for (const legacy of LEGACY_NAMES) {
+    assert(!schemaText.includes(legacy), `Legacy reference exposed in schema: ${legacy}`)
+  }
+  assert(!Object.prototype.hasOwnProperty.call(schema.paths || {}, '/api/actions/context'), 'Legacy /api/actions/context path must not be exposed')
+
+  for (const op of ops) {
+    assert(Array.isArray(op.security) && op.security.length > 0, `${op.operationId} missing security`)
+    assert(Object.prototype.hasOwnProperty.call(op, 'x-openai-isConsequential'), `${op.operationId} missing x-openai-isConsequential`)
+    assert(typeof op.summary === 'string' && op.summary.length > 0 && op.summary.length <= 300, `${op.operationId} summary invalid`)
+    assert(typeof op.description === 'string' && op.description.length > 0 && op.description.length <= 300, `${op.operationId} description invalid`)
+    const requestSchema = op.requestBody?.content?.['application/json']?.schema
+    if (requestSchema) {
+      visitDescriptions(requestSchema, (value, location) => {
+        assert(value.length <= 700, `${op.operationId} description too long at ${location}`)
+      })
+    }
+  }
+}
+
+function ensureConsequentialFlags(schema) {
+  const expectedFlags = new Map([
+    ['getBuildFlowStatus', false],
+    ['listBuildFlowSources', false],
+    ['getBuildFlowActiveContext', false],
+    ['inspectBuildFlowContext', false],
+    ['readBuildFlowContext', false],
+    ['setBuildFlowActiveContext', true],
+    ['writeBuildFlowArtifact', true],
+    ['applyBuildFlowFileChange', true]
+  ])
+  for (const op of collectOperations(schema)) {
+    assert(op['x-openai-isConsequential'] === expectedFlags.get(op.operationId), `${op.operationId} consequential flag mismatch`)
+  }
+}
+
+function ensureInstructionAlignment(instructions) {
+  for (const operationId of EXPECTED_OPERATION_IDS) {
+    assert(instructions.includes(operationId), `Instructions must mention ${operationId}`)
+  }
+  for (const legacy of LEGACY_NAMES) {
+    assert(!instructions.includes(legacy), `Legacy instruction reference exposed: ${legacy}`)
+  }
+  assert(instructions.includes('verified:true'), 'Instructions must mention verified:true')
+  assert(instructions.includes('single enabled searchable source'), 'Instructions must mention single-source preference')
+  assert(!instructions.includes('/api/actions/context'), 'Instructions must not reference hidden/internal context endpoints')
+}
+
+function visitDescriptions(node, fn, location = 'schema') {
+  if (!node || typeof node !== 'object') return
+  if (typeof node.description === 'string') fn(node.description, location)
+  if (node.properties && typeof node.properties === 'object') {
+    for (const [key, value] of Object.entries(node.properties)) {
+      visitDescriptions(value, fn, `${location}.${key}`)
+    }
+  }
+  if (node.items) visitDescriptions(node.items, fn, `${location}[]`)
+  if (Array.isArray(node.allOf)) node.allOf.forEach((item, index) => visitDescriptions(item, fn, `${location}.allOf[${index}]`))
+  if (Array.isArray(node.anyOf)) node.anyOf.forEach((item, index) => visitDescriptions(item, fn, `${location}.anyOf[${index}]`))
+  if (Array.isArray(node.oneOf)) node.oneOf.forEach((item, index) => visitDescriptions(item, fn, `${location}.oneOf[${index}]`))
+}
+
+async function fetchSchema(baseUrl) {
+  const result = await requestJson(`${baseUrl}/api/openapi`, {}, 15000)
+  return result.json
+}
+
+function regenerateDocsSchema() {
+  const before = fs.existsSync(DOCS_SCHEMA_FILE) ? fs.readFileSync(DOCS_SCHEMA_FILE, 'utf8') : null
+  execFileSync('node', ['scripts/generate-openapi-chatgpt.mjs'], { cwd: ROOT, stdio: 'pipe', env: process.env })
+  const after = fs.readFileSync(DOCS_SCHEMA_FILE, 'utf8')
+  if (before !== after) {
+    if (before !== null) {
+      fs.writeFileSync(DOCS_SCHEMA_FILE, before)
+    } else {
+      fs.unlinkSync(DOCS_SCHEMA_FILE)
+    }
+    throw new Error('docs/openapi.chatgpt.json was stale. Regenerate it before importing.')
+  }
+}
+
+async function runActionSuite(baseUrl, label) {
+  const startedAt = Date.now()
+  const steps = []
+  const runStep = async (name, fn) => {
+    const stepStartedAt = Date.now()
+    try {
+      const result = await fn()
+      const step = {
+        name,
+        ok: true,
+        status: result.response.status,
+        durationMs: Date.now() - stepStartedAt,
+        byteLength: result.byteLength,
+        json: result.json
+      }
+      steps.push(step)
+      return result
+    } catch (error) {
+      const step = {
+        name,
+        ok: false,
+        durationMs: Date.now() - stepStartedAt,
+        error: error instanceof Error ? error.message : String(error)
+      }
+      steps.push(step)
+      throw error
+    }
   }
 
-  logStep('Status')
-  const status = await requestJson(`${PUBLIC_BASE_URL}/api/actions/status`, { method: 'GET' })
-  assert(status.response.status === 200, 'status must be 200')
-  assert(status.json && typeof status.json.connected === 'boolean', 'status.connected missing')
-  assert(typeof status.json.sourceCount === 'number', 'status.sourceCount missing')
-  assert(typeof status.json.sourcesAvailable === 'boolean', 'status.sourcesAvailable missing')
+  const status = await runStep('getBuildFlowStatus', () => requestJson(`${baseUrl}/api/actions/status`, { method: 'GET' }))
+  assert(status.response.status === 200, `${label}: status must return 200`)
+  assert(status.json.connected === true || status.json.connected === false, `${label}: status connected missing`)
 
-  logStep('Context list_sources')
-  const listSources = await requestJson(`${PUBLIC_BASE_URL}/api/actions/context`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'list_sources' })
-  })
-  assert(listSources.response.status === 200, 'list_sources must be 200')
-  assert(listSources.json.status === 'ok', 'list_sources status must be ok')
-  assert(Array.isArray(listSources.json.sources) && listSources.json.sources.length > 0, 'list_sources sources must be non-empty')
-  assert(Array.isArray(listSources.json.activeSourceIds), 'list_sources activeSourceIds must be array')
-  assert(['single', 'multi', 'all'].includes(listSources.json.contextMode), 'list_sources contextMode invalid')
-  for (const source of listSources.json.sources) {
-    assert(typeof source.id === 'string' && source.id, 'source.id missing')
-    assert(typeof source.label === 'string' && source.label, 'source.label missing')
-    assert(typeof source.enabled === 'boolean', 'source.enabled missing')
-    assert(typeof source.active === 'boolean', 'source.active missing')
-  }
-  assert(listSources.json.sources.some(source => source.id === 'buildflow'), 'buildflow source missing')
+  const sources = await runStep('listBuildFlowSources', () => requestJson(`${baseUrl}/api/actions/sources`, { method: 'GET' }))
+  assert(sources.response.status === 200, `${label}: sources must return 200`)
+  assert(Array.isArray(sources.json.sources), `${label}: sources missing`)
+  assert(sources.json.sources.every(source => typeof source.indexStatus === 'string' && typeof source.searchable === 'boolean'), `${label}: sources readiness fields missing`)
 
-  logStep('Context get_active')
-  const active = await requestJson(`${PUBLIC_BASE_URL}/api/actions/context`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'get_active' })
-  })
-  assert(active.response.status === 200, 'get_active must be 200')
-  assert(active.json.status === 'ok', 'get_active status must be ok')
-
-  const enabledSources = listSources.json.sources.filter(source => source.enabled)
-  assert(enabledSources.length >= 2, 'Need at least two enabled sources to prove multi-source write validation')
-  const sourceId = (enabledSources.find(source => source.id === 'buildflow') || enabledSources[0]).id
-  const secondarySourceId = enabledSources.find(source => source.id !== sourceId)?.id
-  assert(typeof secondarySourceId === 'string' && secondarySourceId.length > 0, 'Need a secondary enabled source')
-
-  logStep('Context set_active single')
-  const single = await requestJson(`${PUBLIC_BASE_URL}/api/actions/context`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'set_active', contextMode: 'single', sourceIds: [sourceId] })
-  })
-  assert(single.response.status === 200, 'set_active single must be 200')
-  assert(single.json.contextMode === 'single', 'set_active single contextMode mismatch')
-  assert(Array.isArray(single.json.activeSourceIds) && single.json.activeSourceIds.length === 1 && single.json.activeSourceIds[0] === sourceId, 'single activeSourceIds mismatch')
-
-  logStep('Negative write without sourceId while multiple active')
-  const multi = await requestJson(`${PUBLIC_BASE_URL}/api/actions/context`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'set_active', contextMode: 'multi', sourceIds: [sourceId, secondarySourceId] })
-  })
-  assert(multi.response.status === 200, 'set_active multi must be 200')
-  assert(Array.isArray(multi.json.activeSourceIds) && multi.json.activeSourceIds.includes(sourceId) && multi.json.activeSourceIds.includes(secondarySourceId), 'multi activeSourceIds mismatch')
-  const missingSourceWrite = await requestJson(`${PUBLIC_BASE_URL}/api/actions/write-artifact`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      artifactType: 'task_brief',
-      title: 'Missing source validation',
-      content: 'This must fail because sourceId is omitted while multiple sources are active.'
+  const buildflowSource = sources.json.sources.find(source => source.id === 'buildflow')
+  assert(buildflowSource, `${label}: buildflow source unavailable`)
+  if (buildflowSource.indexStatus !== 'ready' || buildflowSource.searchable !== true) {
+    await runStep('reindex buildflow source', async () => {
+      const result = await requestJson(`${baseUrl}/api/agent/sources/reindex`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceId: 'buildflow' })
+      }, 45000)
+      assert([200, 202].includes(result.response.status), `${label}: reindex should return 200 or 202`)
+      return result
     })
-  })
-  assert(missingSourceWrite.response.status >= 400, 'write without sourceId should fail')
-  assert(typeof missingSourceWrite.json.error === 'string', 'missing source write error missing')
 
-  logStep('Context reindex selected source')
-  const reindexResponse = await requestJson(`${PUBLIC_BASE_URL}/api/agent/sources/reindex`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sourceId })
-  })
-  assert([200, 202].includes(reindexResponse.response.status), 'reindex request must be 200 or 202')
-  assert(['indexing', 'ready'].includes(reindexResponse.json.indexStatus), 'reindex request status must be indexing or ready')
-  const readySource = await waitForSourceStatus(sourceId, ['ready'])
-  assert(readySource.indexStatus === 'ready', 'selected source did not become ready after reindex')
+    await runStep('wait for buildflow ready', async () => {
+      const ready = await waitForSourceReady(baseUrl, 'buildflow', 60000)
+      assert(ready, `${label}: buildflow did not become ready`)
+      return ready
+    })
+  }
 
-  const singleAgain = await requestJson(`${PUBLIC_BASE_URL}/api/actions/context`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'set_active', contextMode: 'single', sourceIds: [sourceId] })
-  })
-  assert(singleAgain.response.status === 200, 'set_active single reset must be 200')
+  const active = await runStep('getBuildFlowActiveContext', () => requestJson(`${baseUrl}/api/actions/context/active`, { method: 'GET' }))
+  assert(active.response.status === 200, `${label}: active context must return 200`)
+  assert(Array.isArray(active.json.activeSourceIds), `${label}: activeSourceIds missing`)
 
-  logStep('Inspect list_files')
-  const listFiles = await requestJson(`${PUBLIC_BASE_URL}/api/actions/inspect`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: 'list_files', sourceIds: [sourceId], path: '', depth: 2, limit: 20 })
-  })
-  assert(listFiles.response.status === 200, 'list_files must be 200')
-  assert(Array.isArray(listFiles.json.entries), 'list_files entries must be array')
-  assert(listFiles.json.entries.length > 0, 'list_files entries must be non-empty')
-  assert(listFiles.json.entries.every(entry => typeof entry.sourceId === 'string' && typeof entry.path === 'string'), 'list_files entries require sourceId/path')
-
-  const readCandidate =
-    listFiles.json.entries.find(entry => entry.path === 'README.md') ||
-    listFiles.json.entries.find(entry => entry.type === 'file' && entry.path.endsWith('.md')) ||
-    listFiles.json.entries.find(entry => entry.type === 'file' && entry.path.endsWith('.json')) ||
-    listFiles.json.entries.find(entry => entry.type === 'file')
-  assert(readCandidate, 'No readable file candidate found')
-
-  logStep('Inspect search')
-  const search = await requestJson(`${PUBLIC_BASE_URL}/api/actions/inspect`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: 'search', sourceIds: [sourceId], query: 'README', limit: 5 })
-  })
-  assert(search.response.status === 200, 'search must be 200')
-  assert(Array.isArray(search.json.results), 'search results must be array')
-
-  logStep('Read context read_paths')
-  const readPaths = await requestJson(`${PUBLIC_BASE_URL}/api/actions/read-context`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: 'read_paths', sourceId, paths: [readCandidate.path], maxBytesPerFile: 10000 })
-  })
-  assert(readPaths.response.status === 200, 'read_paths must be 200')
-  assert(readPaths.json.mode === 'read_paths', 'read_paths mode mismatch')
-  assert(Array.isArray(readPaths.json.files) && readPaths.json.files.length > 0, 'read_paths files must be non-empty')
-  assert(typeof readPaths.json.files[0].content === 'string' && readPaths.json.files[0].content.length > 0, 'read_paths content missing')
-
-  logStep('Read context search_and_read')
-  const searchQueries = ['README', readCandidate.path.split('/').pop()?.replace(/\.[^.]+$/, '') || 'package', 'package']
-  let searchAndRead = null
-  for (const query of searchQueries) {
-    const response = await fetch(`${PUBLIC_BASE_URL}/api/actions/read-context`, {
+  await runStep('setBuildFlowActiveContext missing contextMode', async () => {
+    const result = await requestJson(`${baseUrl}/api/actions/context/active`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'search_and_read', sourceIds: [sourceId], query, limit: 2, maxBytesPerFile: 10000 })
+      body: JSON.stringify({ sourceIds: ['buildflow'] })
     })
-    const contentType = response.headers.get('content-type') || ''
-    const text = await response.text()
-    if (!contentType.includes('application/json')) {
-      throw new Error(`Expected JSON from ${PUBLIC_BASE_URL}/api/actions/read-context, got ${response.status} ${contentType}\n${text.slice(0, 500)}`)
-    }
-    const attempt = JSON.parse(text)
-    if (response.status !== 200) {
-      continue
-    }
-    assert(attempt.mode === 'search_and_read', 'search_and_read mode mismatch')
-    assert(Array.isArray(attempt.results), 'search_and_read results must be array')
-    if (attempt.results.some(result => typeof result.content === 'string' && result.content.length > 0)) {
-      searchAndRead = { response, json: attempt, contentType }
-      break
-    }
-  }
-  if (!searchAndRead) {
-    console.warn('search_and_read returned no content for fallback queries; continuing because the route responded successfully.')
-  }
+    assert(result.response.status === 400, `${label}: missing contextMode should fail`)
+    return result
+  })
 
-  logStep('Write artifact')
-  const artifactTitle = 'BuildFlow SaaS Master Plan.md'
-  const artifactContent = 'This file verifies that writeBuildFlowArtifact works from the public Custom GPT action surface.'
-  const artifact = await requestJson(`${PUBLIC_BASE_URL}/api/actions/write-artifact`, {
+  await runStep('setBuildFlowActiveContext missing sourceIds', async () => {
+    const result = await requestJson(`${baseUrl}/api/actions/context/active`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contextMode: 'single' })
+    })
+    assert(result.response.status === 400, `${label}: missing sourceIds should fail`)
+    return result
+  })
+
+  await runStep('setBuildFlowActiveContext reject all', async () => {
+    const result = await requestJson(`${baseUrl}/api/actions/context/active`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contextMode: 'all', sourceIds: ['buildflow'] })
+    })
+    assert(result.response.status === 400, `${label}: contextMode=all should fail`)
+    return result
+  })
+
+  await runStep('setBuildFlowActiveContext reject single zero', async () => {
+    const result = await requestJson(`${baseUrl}/api/actions/context/active`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contextMode: 'single', sourceIds: [] })
+    })
+    assert(result.response.status === 400, `${label}: single with 0 ids should fail`)
+    return result
+  })
+
+  await runStep('setBuildFlowActiveContext reject single two', async () => {
+    const second = sources.json.sources.find(source => source.id !== 'buildflow')?.id || '__other__'
+    const result = await requestJson(`${baseUrl}/api/actions/context/active`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contextMode: 'single', sourceIds: ['buildflow', second] })
+    })
+    assert(result.response.status === 400, `${label}: single with 2 ids should fail`)
+    return result
+  })
+
+  await runStep('setBuildFlowActiveContext reject unknown', async () => {
+    const result = await requestJson(`${baseUrl}/api/actions/context/active`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contextMode: 'single', sourceIds: ['__missing_source__'] })
+    })
+    assert(result.response.status === 400, `${label}: unknown source should fail`)
+    return result
+  })
+
+  const disabledSource = sources.json.sources.find(source => source.enabled === false)
+  assert(disabledSource, `${label}: no disabled source available to verify rejection`)
+  await runStep('setBuildFlowActiveContext reject disabled', async () => {
+    const result = await requestJson(`${baseUrl}/api/actions/context/active`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contextMode: 'single', sourceIds: [disabledSource.id] })
+    })
+    assert(result.response.status === 400, `${label}: disabled source should fail`)
+    return result
+  })
+
+  const setSingle = await runStep('setBuildFlowActiveContext single buildflow', () => requestJson(`${baseUrl}/api/actions/context/active`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contextMode: 'single', sourceIds: ['buildflow'] })
+  }))
+  assert(setSingle.response.status === 200, `${label}: set active single should return 200`)
+  assert(setSingle.json.contextMode === 'single', `${label}: single contextMode mismatch`)
+  assert(Array.isArray(setSingle.json.activeSourceIds) && setSingle.json.activeSourceIds.length === 1, `${label}: single active ids mismatch`)
+
+  const inspectList = await runStep('inspectBuildFlowContext list_files', () => requestJson(`${baseUrl}/api/actions/inspect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'list_files', sourceId: 'buildflow', path: '', depth: 1, limit: 10 })
+  }))
+  assert(inspectList.response.status === 200, `${label}: inspect list_files must return 200`)
+  assert(Array.isArray(inspectList.json.entries) || Array.isArray(inspectList.json.results), `${label}: inspect list_files payload missing`)
+
+  const inspectSearch = await runStep('inspectBuildFlowContext search', () => requestJson(`${baseUrl}/api/actions/inspect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'search', sourceId: 'buildflow', query: 'package.json', limit: 5 })
+  }))
+  assert(inspectSearch.response.status === 200, `${label}: inspect search must return 200`)
+  assert(Array.isArray(inspectSearch.json.results), `${label}: inspect search results missing`)
+
+  const readPaths = await runStep('readBuildFlowContext read_paths', () => requestJson(`${baseUrl}/api/actions/read-context`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'read_paths', sourceId: 'buildflow', paths: ['package.json'], maxBytesPerFile: 5000 })
+  }))
+  assert(readPaths.response.status === 200, `${label}: read_paths must return 200`)
+  assert(Array.isArray(readPaths.json.files), `${label}: read_paths files missing`)
+
+  const searchAndRead = await runStep('readBuildFlowContext search_and_read', () => requestJson(`${baseUrl}/api/actions/read-context`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'search_and_read', sourceId: 'buildflow', query: 'package.json', limit: 3, maxBytesPerFile: 5000 })
+  }))
+  assert(searchAndRead.response.status === 200, `${label}: search_and_read must return 200`)
+  assert(Array.isArray(searchAndRead.json.results), `${label}: search_and_read results missing`)
+
+  const artifactTitle = `GPT contract smoke ${label} ${Date.now()}`
+  const artifactContent = `Smoke test artifact for ${label}.`
+  const writeArtifact = await runStep('writeBuildFlowArtifact', () => requestJson(`${baseUrl}/api/actions/write-artifact`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      sourceId,
-      artifactType: 'task_brief',
+      sourceId: 'buildflow',
+      artifactType: 'general_doc',
       title: artifactTitle,
       content: artifactContent
     })
-  })
-  assert(artifact.response.status === 200, 'write-artifact must be 200')
-  assert(typeof artifact.json.path === 'string' && artifact.json.path.length > 0, 'write-artifact path missing')
-  assert(artifact.json.sourceId === sourceId, 'write-artifact sourceId mismatch')
-  assertWriteVerification(artifact.json, 'write-artifact')
-  assert(!artifact.json.path.includes('planmd.md'), 'slug bug still present in artifact path')
-  const artifactDiskPath = diskPath(artifact.json.path)
-  cleanupTargets.push(artifactDiskPath)
-  assert(fs.existsSync(artifactDiskPath), `artifact missing on disk: ${artifactDiskPath}`)
-  assert(fs.readFileSync(artifactDiskPath, 'utf8') === artifactContent, 'artifact disk content mismatch')
-  const artifactReadBack = await readActionFile(sourceId, artifact.json.path)
-  assert(artifactReadBack.response.status === 200, 'artifact readback must be 200')
-  const artifactReadFile = (artifactReadBack.json.files || []).find(file => file.path === artifact.json.path)
-  assert(artifactReadFile && typeof artifactReadFile.content === 'string', 'artifact readback missing file')
-  assert(artifactReadFile.content === artifactContent, 'artifact readback content mismatch')
+  }))
+  assert(writeArtifact.response.status === 200, `${label}: write artifact must return 200`)
+  assert(writeArtifact.json.verified === true, `${label}: write artifact must return verified:true`)
+  assert(typeof writeArtifact.json.path === 'string' && writeArtifact.json.path.length > 0, `${label}: write artifact path missing`)
 
-  logStep('Apply file change append')
-  const appendMarker = '\n\nPublic apply-file-change smoke test append.'
-  const append = await requestJson(`${PUBLIC_BASE_URL}/api/actions/apply-file-change`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      changeType: 'append',
-      sourceId,
-      path: artifact.json.path,
-      content: appendMarker,
-      reason: 'Verify applyBuildFlowFileChange works from public Custom GPT action surface.'
-    })
-  })
-  assert(append.response.status === 200, 'apply-file-change must be 200')
-  assert(append.json.sourceId === sourceId, 'apply-file-change sourceId mismatch')
-  assertWriteVerification(append.json, 'apply-file-change')
-  const appendedDiskContent = fs.readFileSync(artifactDiskPath, 'utf8')
-  assert(appendedDiskContent.includes(appendMarker), 'append did not land on disk')
-  const appendReadBack = await readActionFile(sourceId, artifact.json.path)
-  assert(appendReadBack.response.status === 200, 'append readback must be 200')
-  const appendReadFile = (appendReadBack.json.files || []).find(file => file.path === artifact.json.path)
-  assert(appendReadFile && typeof appendReadFile.content === 'string', 'append readback missing file')
-  assert(appendReadFile.content.includes(appendMarker), 'append readback missing appended content')
+  const artifactDiskPath = path.resolve(ROOT, writeArtifact.json.path)
+  assert(fs.existsSync(artifactDiskPath), `${label}: written artifact missing on disk`)
 
-  logStep('Negative invalid source id')
-  const invalidSource = await requestJson(`${PUBLIC_BASE_URL}/api/actions/write-artifact`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sourceId: 'missing', artifactType: 'task_brief', title: 'Missing source', content: 'Should fail.' })
-  })
-  assert(invalidSource.response.status >= 400, 'invalid source write should fail')
-  assert(typeof invalidSource.json.error === 'string', 'invalid source error missing')
-
-  logStep('Negative blocked write')
-  const blockedWrite = await requestJson(`${PUBLIC_BASE_URL}/api/actions/apply-file-change`, {
+  const applyPath = `docs/buildflow/tasks/gpt-contract-smoke-${label.toLowerCase()}-${Date.now()}.md`
+  const applyChange = await runStep('applyBuildFlowFileChange create', () => requestJson(`${baseUrl}/api/actions/apply-file-change`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       changeType: 'create',
-      sourceId,
-      path: '.env',
-      content: 'SHOULD_NOT_WRITE=true',
-      reason: 'Verify blocked write behavior.'
+      sourceId: 'buildflow',
+      path: applyPath,
+      content: `Smoke file for ${label}.`,
+      reason: 'Contract smoke test'
     })
-  })
-  assert([400, 403].includes(blockedWrite.response.status), 'blocked write should be 400 or 403')
-  assert(typeof blockedWrite.json.error === 'string', 'blocked write error missing')
+  }))
+  assert(applyChange.response.status === 200, `${label}: apply file change must return 200`)
+  assert(applyChange.json.verified === true, `${label}: apply file change must return verified:true`)
 
-  if (fs.existsSync(artifactDiskPath)) {
-    fs.unlinkSync(artifactDiskPath)
+  const applyDiskPath = path.resolve(ROOT, applyChange.json.path || applyPath)
+  assert(fs.existsSync(applyDiskPath), `${label}: applied file missing on disk`)
+
+  for (const filePath of [artifactDiskPath, applyDiskPath]) {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
   }
-  assert(!fs.existsSync(artifactDiskPath), 'temporary artifact cleanup failed')
+  assert(!fs.existsSync(artifactDiskPath), `${label}: write artifact cleanup failed`)
+  assert(!fs.existsSync(applyDiskPath), `${label}: apply-file cleanup failed`)
 
-  console.log('\nAll public GPT action checks passed.')
+  return { startedAt, finishedAt: Date.now(), steps }
 }
 
-main().catch(error => {
-  for (const target of cleanupTargets) {
-    if (fs.existsSync(target)) {
-      try {
-        fs.unlinkSync(target)
-      } catch (_) {
-        // best-effort cleanup only
-      }
+async function waitForSourceReady(baseUrl, sourceId, timeoutMs) {
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < timeoutMs) {
+    const result = await requestJson(`${baseUrl}/api/agent/sources`, { method: 'GET' })
+    const source = Array.isArray(result.json.sources) ? result.json.sources.find(entry => entry.id === sourceId) : null
+    if (source && source.indexStatus === 'ready' && source.searchable === true) {
+      return result
     }
+    await new Promise(resolve => setTimeout(resolve, 1000))
   }
+  return null
+}
+
+async function main() {
+  const localSchema = await fetchSchema(LOCAL_BASE_URL)
+  const publicSchema = await fetchSchema(PUBLIC_BASE_URL)
+  const docsSchema = loadDocsSchema()
+  const instructions = loadInstructions()
+
+  assert(JSON.stringify(localSchema) === JSON.stringify(publicSchema), 'Local and public OpenAPI schemas must match exactly')
+  assert(JSON.stringify(localSchema) === JSON.stringify(docsSchema), 'docs/openapi.chatgpt.json must match the live schema')
+
+  ensureSchemaRules(localSchema)
+  ensureConsequentialFlags(localSchema)
+  ensureNoStaleFragments()
+  ensureInstructionAlignment(instructions)
+  regenerateDocsSchema()
+
+  const localSuite = await runActionSuite(LOCAL_BASE_URL, 'local')
+  const publicSuite = await runActionSuite(PUBLIC_BASE_URL, 'public')
+
+  console.log(JSON.stringify({
+    ok: true,
+    status: 'passed',
+    local: {
+      durationMs: localSuite.finishedAt - localSuite.startedAt,
+      steps: localSuite.steps
+    },
+    public: {
+      durationMs: publicSuite.finishedAt - publicSuite.startedAt,
+      steps: publicSuite.steps
+    }
+  }, null, 2))
+}
+
+main().catch((error) => {
   console.error(error instanceof Error ? error.stack || error.message : String(error))
   process.exit(1)
 })

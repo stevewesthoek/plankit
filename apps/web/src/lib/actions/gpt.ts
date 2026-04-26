@@ -11,7 +11,7 @@ type NormalizedSource = {
 
 type NormalizedContextResult = {
   status: 'ok'
-  contextMode: 'single' | 'multi' | 'all'
+  contextMode: 'single' | 'multi'
   activeSourceIds: string[]
   sources: NormalizedSource[]
 }
@@ -41,35 +41,63 @@ export async function requireExplicitSourceId(body: Record<string, unknown>) {
   return { error: 'Target sourceId required when multiple sources are active.', status: 400 }
 }
 
-function normalizeContextResult(
-  sourcesPayload: unknown,
-  activePayload: unknown,
-  fallbackStatus: 'ok' = 'ok'
-): NormalizedContextResult {
+function normalizeSourceRecord(source: Record<string, unknown>): NormalizedSource & {
+  indexed?: boolean
+  indexStatus?: string
+  indexedFileCount?: number
+  lastIndexedAt?: string
+  searchable?: boolean
+} {
+  const id = typeof source.id === 'string' ? source.id : ''
+  const label = typeof source.label === 'string' && source.label.trim() ? source.label : id
+  const enabled = source.enabled !== false
+  const active = source.active === true
+  const type = typeof source.type === 'string' && source.type.trim() ? source.type : undefined
+  const indexed = source.indexed === true
+  const indexStatus = typeof source.indexStatus === 'string' && source.indexStatus.trim() ? source.indexStatus : undefined
+  const indexedFileCount = typeof source.indexedFileCount === 'number' ? source.indexedFileCount : undefined
+  const lastIndexedAt = typeof source.lastIndexedAt === 'string' && source.lastIndexedAt.trim() ? source.lastIndexedAt : undefined
+  const searchable = typeof source.searchable === 'boolean' ? source.searchable : (indexStatus ?? (indexed ? 'ready' : 'pending')) === 'ready'
+  return { id, label, enabled, active, ...(type ? { type } : {}), ...(indexed !== undefined ? { indexed } : {}), ...(indexStatus ? { indexStatus } : {}), ...(indexedFileCount !== undefined ? { indexedFileCount } : {}), ...(lastIndexedAt ? { lastIndexedAt } : {}), ...(searchable !== undefined ? { searchable } : {}) }
+}
+
+function normalizeSourcesList(sourcesPayload: unknown) {
   const listedSources = Array.isArray((sourcesPayload as { sources?: unknown }).sources)
     ? ((sourcesPayload as { sources: Array<Record<string, unknown>> }).sources || [])
     : []
+  return listedSources.map((source) => normalizeSourceRecord(source))
+}
+
+function normalizeActiveContext(activePayload: unknown): NormalizedContextResult {
   const activeSourceIds = Array.isArray((activePayload as { activeSourceIds?: unknown }).activeSourceIds)
     ? (((activePayload as { activeSourceIds: string[] }).activeSourceIds || []).filter(id => typeof id === 'string'))
     : []
   const mode = (activePayload as { mode?: unknown }).mode
-  const contextMode = mode === 'single' || mode === 'multi' || mode === 'all' ? mode : 'all'
+  const contextMode = mode === 'single' || mode === 'multi' ? mode : activeSourceIds.length === 1 ? 'single' : 'multi'
+  return {
+    status: 'ok',
+    contextMode,
+    activeSourceIds,
+    sources: []
+  }
+}
+
+function normalizeContextResult(sourcesPayload: unknown, activePayload: unknown, fallbackStatus: 'ok' = 'ok'): NormalizedContextResult {
+  const listedSources = normalizeSourcesList(sourcesPayload)
+  const activeSourceIds = Array.isArray((activePayload as { activeSourceIds?: unknown }).activeSourceIds)
+    ? (((activePayload as { activeSourceIds: string[] }).activeSourceIds || []).filter(id => typeof id === 'string'))
+    : []
+  const mode = (activePayload as { mode?: unknown }).mode
+  const contextMode = mode === 'single' || mode === 'multi' ? mode : activeSourceIds.length === 1 ? 'single' : 'multi'
   const activeIds = new Set(activeSourceIds)
 
-  const sources: NormalizedSource[] = listedSources.map(source => {
-    const id = typeof source.id === 'string' ? source.id : ''
-    const label = typeof source.label === 'string' && source.label.trim() ? source.label : id
-    const enabled = source.enabled !== false
-    const active = activeIds.has(id) || source.active === true
-    const type = typeof source.type === 'string' && source.type.trim() ? source.type : undefined
-    return type ? { id, label, enabled, active, type } : { id, label, enabled, active }
-  })
-
-  if (sources.length === 0 && activeIds.size > 0) {
-    for (const id of activeIds) {
-      sources.push({ id, label: id, enabled: true, active: true })
-    }
-  }
+  const sources: NormalizedSource[] = listedSources.map(source => ({
+    id: source.id,
+    label: source.label,
+    enabled: source.enabled,
+    active: activeIds.has(source.id) || source.active === true,
+    ...(source.type ? { type: source.type } : {})
+  }))
 
   return {
     status: fallbackStatus,
@@ -128,30 +156,81 @@ export function unwrapActionError(err: unknown, fallback: string) {
   return { error: `${fallback}: ${String(err)}`, status: 500 }
 }
 
+function validateContextSelection(body: Record<string, unknown>) {
+  const contextMode = body.contextMode
+  const sourceIds = body.sourceIds
+  if (contextMode !== 'single' && contextMode !== 'multi') {
+    throw new ActionTransportError('contextMode is required and must be single or multi', 400)
+  }
+  if (!Array.isArray(sourceIds) || sourceIds.length === 0 || sourceIds.some(id => typeof id !== 'string' || !id)) {
+    throw new ActionTransportError('sourceIds is required and must be a non-empty string array', 400)
+  }
+  if (contextMode === 'single' && sourceIds.length !== 1) {
+    throw new ActionTransportError('single mode requires exactly one sourceId', 400)
+  }
+}
+
+async function loadSourceMap() {
+  const sourcesPayload = await fetchJson('/api/sources/list', { method: 'GET' })
+  const sources = normalizeSourcesList(sourcesPayload)
+  const map = new Map(sources.map(source => [source.id, source]))
+  return { sourcesPayload, sources, map }
+}
+
+async function ensureContextSourcesAllowed(sourceIds: string[]) {
+  const { map } = await loadSourceMap()
+  for (const id of sourceIds) {
+    const source = map.get(id)
+    if (!source) {
+      throw new ActionTransportError(`Unknown sourceId: ${id}`, 400)
+    }
+    if (source.enabled === false) {
+      throw new ActionTransportError(`Source not enabled: ${id}`, 400)
+    }
+  }
+}
+
+export async function listBuildFlowSources() {
+  const sourcesPayload = await fetchJson('/api/sources/list', { method: 'GET' })
+  return {
+    status: 'ok' as const,
+    sources: normalizeSourcesList(sourcesPayload).map(source => ({
+      id: source.id,
+      label: source.label,
+      enabled: source.enabled,
+      active: source.active,
+      indexStatus: source.indexStatus ?? (source.searchable ? 'ready' : 'pending'),
+      searchable: source.searchable === true
+    }))
+  }
+}
+
+export async function getBuildFlowActiveContext() {
+  const activePayload = await executeAction('/api/get-active-sources', {})
+  return normalizeActiveContext(activePayload)
+}
+
+export async function setBuildFlowActiveContext(body: Record<string, unknown>) {
+  validateContextSelection(body)
+  await ensureContextSourcesAllowed(body.sourceIds as string[])
+  const result = await executeAction('/api/set-active-sources', {
+    mode: body.contextMode,
+    activeSourceIds: body.sourceIds
+  })
+  const sourcesPayload = await fetchJson('/api/sources/list', { method: 'GET' })
+  return normalizeContextResult(sourcesPayload, result)
+}
+
 export async function dispatchBuildFlowContext(body: Record<string, unknown>) {
   const action = body.action
   if (action === 'list_sources') {
-    const [sourcesPayload, activePayload] = await Promise.all([
-      fetchJson('/api/sources/list', { method: 'GET' }),
-      executeAction('/api/get-active-sources', {})
-    ])
-    return normalizeContextResult(sourcesPayload, activePayload)
+    return listBuildFlowSources()
   }
   if (action === 'get_active') {
-    const [sourcesPayload, activePayload] = await Promise.all([
-      fetchJson('/api/sources/list', { method: 'GET' }),
-      executeAction('/api/get-active-sources', {})
-    ])
-    return normalizeContextResult(sourcesPayload, activePayload)
+    return getBuildFlowActiveContext()
   }
   if (action === 'set_active') {
-    const payload: Record<string, unknown> = {
-      mode: body.contextMode,
-      activeSourceIds: body.sourceIds
-    }
-    const result = await executeAction('/api/set-active-sources', payload)
-    const sourcesPayload = await fetchJson('/api/sources/list', { method: 'GET' })
-    return normalizeContextResult(sourcesPayload, result)
+    return setBuildFlowActiveContext(body)
   }
   throw new Error('Invalid action')
 }
