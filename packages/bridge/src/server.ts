@@ -16,6 +16,52 @@ import { startup, type StartupResult } from './startup'
 let runtimeConfig: StartupResult | null = null
 const HEARTBEAT_INTERVAL = 30000
 
+// Body size limits
+const MAX_REGISTER_BODY = 4096
+const MAX_PROXY_BODY = 65536
+
+interface BodyParseResult {
+  success: boolean
+  body?: string
+  error?: string
+}
+
+// Helper: safely accumulate request body with size limit
+function parseRequestBody(
+  req: http.IncomingMessage,
+  maxBytes: number,
+  onChunk?: (chunk: string) => void
+): Promise<BodyParseResult> {
+  return new Promise((resolve) => {
+    let body = ''
+    let exceedsLimit = false
+
+    req.on('data', (chunk) => {
+      if (exceedsLimit) return
+
+      body += chunk.toString()
+      onChunk?.(body)
+
+      if (body.length > maxBytes) {
+        exceedsLimit = true
+        // Do NOT destroy the request; just stop accumulating and mark for rejection
+      }
+    })
+
+    req.on('end', () => {
+      if (exceedsLimit) {
+        resolve({ success: false, error: 'Request body too large' })
+      } else {
+        resolve({ success: true, body })
+      }
+    })
+
+    req.on('error', (err) => {
+      resolve({ success: false, error: 'Request error' })
+    })
+  })
+}
+
 function requireAdminAuth(req: http.IncomingMessage, res: http.ServerResponse): boolean {
   if (!runtimeConfig?.config.relayAdminToken) {
     // No admin token set, allow access (dev mode)
@@ -146,7 +192,7 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json')
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200)
@@ -211,13 +257,7 @@ const server = http.createServer(async (req, res) => {
       status: 'ok',
       bridgeRunning: true,
       port: runtimeConfig?.config.bridgePort,
-      connectedDevices: connectedDevices.length,
-      devices: Array.from(connectedDevices).map(d => ({
-        id: d.deviceId,
-        status: d.status,
-        lastSeen: d.lastSeen.toISOString(),
-        lastHeartbeat: d.lastHeartbeat.toISOString()
-      }))
+      connectedDevices: connectedDevices.length
     }
 
     res.writeHead(200)
@@ -249,17 +289,50 @@ const server = http.createServer(async (req, res) => {
 
   // Device registration endpoint: register new device with new token
   if (req.method === 'POST' && req.url === '/api/register') {
-    let body = ''
-    req.on('data', chunk => { body += chunk.toString() })
-    req.on('end', async () => {
+    parseRequestBody(req, MAX_REGISTER_BODY).then(async (result) => {
+      if (!result.success) {
+        res.writeHead(413)
+        res.end(JSON.stringify({ error: result.error }))
+        return
+      }
+
       try {
+        const body = result.body!
+
         const payload = JSON.parse(body)
-        const { deviceToken, deviceId: requestedDeviceId } = payload
+        let { deviceToken, deviceId: requestedDeviceId } = payload
 
         if (!deviceToken) {
           res.writeHead(400)
           res.end(JSON.stringify({ error: 'Missing deviceToken' }))
           return
+        }
+
+        // Validate deviceToken format
+        if (typeof deviceToken !== 'string') {
+          res.writeHead(400)
+          res.end(JSON.stringify({ error: 'Invalid deviceToken' }))
+          return
+        }
+        if (deviceToken.length < 16 || deviceToken.length > 256) {
+          res.writeHead(400)
+          res.end(JSON.stringify({ error: 'Invalid deviceToken' }))
+          return
+        }
+        // Verify printable ASCII only (no control characters)
+        if (!/^[\x20-\x7E]+$/.test(deviceToken)) {
+          res.writeHead(400)
+          res.end(JSON.stringify({ error: 'Invalid deviceToken' }))
+          return
+        }
+
+        // Validate requestedDeviceId format if provided
+        if (requestedDeviceId !== undefined && requestedDeviceId !== null) {
+          if (typeof requestedDeviceId !== 'string' || !requestedDeviceId.match(/^[a-zA-Z0-9_-]{1,64}$/)) {
+            res.writeHead(400)
+            res.end(JSON.stringify({ error: 'Invalid deviceId' }))
+            return
+          }
         }
 
         // Check if token already exists
@@ -313,13 +386,8 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({
           status: 'ok',
           deviceId,
-          message: 'Device registered. Use the connection info below. Client will append /api/bridge/ws to wsUrl.',
-          connectionInfo: {
-            wsUrl: `ws://127.0.0.1:${runtimeConfig?.config.bridgePort}`,
-            token: deviceToken,
-            deviceId,
-            usage: 'Connect with: BRIDGE_URL=<wsUrl> DEVICE_TOKEN=<token> node packages/cli/dist/index.js serve'
-          }
+          message: 'Device registered successfully.',
+          usage: 'Your registration token is ready. Use it to connect your local agent to this relay.'
         }))
 
         logToFile({
@@ -330,8 +398,11 @@ const server = http.createServer(async (req, res) => {
         })
       } catch (err) {
         res.writeHead(400)
-        res.end(JSON.stringify({ error: `Invalid request: ${String(err)}` }))
+        res.end(JSON.stringify({ error: 'Invalid request' }))
       }
+    }).catch((err) => {
+      res.writeHead(400)
+      res.end(JSON.stringify({ error: 'Invalid request' }))
     })
     return
   }
@@ -343,10 +414,15 @@ const server = http.createServer(async (req, res) => {
     const requestDeviceId = authenticateUserDevice(req, res)
     if (!requestDeviceId) return
 
-    let body = ''
-    req.on('data', chunk => { body += chunk.toString() })
-    req.on('end', () => {
+    parseRequestBody(req, MAX_PROXY_BODY).then((result) => {
+      if (!result.success) {
+        res.writeHead(413)
+        res.end(JSON.stringify({ error: result.error }))
+        return
+      }
+
       try {
+        const body = result.body!
         // Extract agent endpoint from URL (e.g., /api/actions/proxy/api/search -> /api/search)
         const proxyMatch = req.url?.match(/^\/api\/actions\/proxy(.*)$/)
         if (!proxyMatch) {
@@ -420,7 +496,7 @@ const server = http.createServer(async (req, res) => {
           pendingRequests.delete(requestId)
           const duration = Date.now() - startTime
           res.writeHead(504)
-          res.end(JSON.stringify({ error: 'Device command timeout after 30 seconds' }))
+          res.end(JSON.stringify({ error: 'Request timeout' }))
 
           // Log timeout
           requestAudit.logRequest({
@@ -482,7 +558,7 @@ const server = http.createServer(async (req, res) => {
             pendingRequests.delete(requestId)
             const duration = Date.now() - startTime
             res.writeHead(500)
-            res.end(JSON.stringify({ error: String(error) }))
+            res.end(JSON.stringify({ error: 'Device command failed' }))
 
             // Log error
             requestAudit.logRequest({
@@ -493,7 +569,7 @@ const server = http.createServer(async (req, res) => {
               createdAt: new Date().toISOString(),
               completedAt: new Date().toISOString(),
               duration,
-              error: String(error),
+              error: 'device_command_error',
               version: 1
             })
 
@@ -503,7 +579,7 @@ const server = http.createServer(async (req, res) => {
               status: 'error',
               endpoint: agentEndpoint,
               deviceId: device.deviceId,
-              reason: String(error)
+              reason: 'device_command_error'
             })
           },
           timeout
@@ -520,18 +596,29 @@ const server = http.createServer(async (req, res) => {
         console.log(`[Bridge] Forwarded action proxy ${agentEndpoint} to device ${device.deviceId} (request ${requestId})`)
       } catch (err) {
         res.writeHead(500)
-        res.end(JSON.stringify({ error: String(err) }))
+        res.end(JSON.stringify({ error: 'Device command failed' }))
       }
+    }).catch((err) => {
+      res.writeHead(500)
+      res.end(JSON.stringify({ error: 'Internal server error' }))
     })
     return
   }
 
   // Command endpoint via session: external requester sends command through a session
+  // REQUIRES ADMIN AUTH
   if (req.method === 'POST' && req.url === '/api/commands/session') {
-    let body = ''
-    req.on('data', chunk => { body += chunk.toString() })
-    req.on('end', () => {
+    if (!requireAdminAuth(req, res)) return
+
+    parseRequestBody(req, MAX_PROXY_BODY).then((result) => {
+      if (!result.success) {
+        res.writeHead(413)
+        res.end(JSON.stringify({ error: result.error }))
+        return
+      }
+
       try {
+        const body = result.body!
         const payload = JSON.parse(body)
         const { sessionId, command, params } = payload
 
@@ -636,7 +723,7 @@ const server = http.createServer(async (req, res) => {
             pendingRequests.delete(requestId)
             const duration = Date.now() - startTime
             res.writeHead(500)
-            res.end(JSON.stringify({ error: String(error) }))
+            res.end(JSON.stringify({ error: 'Device command failed' }))
 
             // Log error
             requestAudit.logRequest({
@@ -647,7 +734,7 @@ const server = http.createServer(async (req, res) => {
               createdAt: new Date().toISOString(),
               completedAt: new Date().toISOString(),
               duration,
-              error: String(error),
+              error: 'device_command_error',
               version: 1
             })
           },
@@ -665,16 +752,27 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(400)
         res.end(JSON.stringify({ error: 'Invalid request' }))
       }
+    }).catch((err) => {
+      res.writeHead(400)
+      res.end(JSON.stringify({ error: 'Invalid request' }))
     })
     return
   }
 
   // Command endpoint: external requester sends command targeting a device (LEGACY)
+  // REQUIRES ADMIN AUTH
   if (req.method === 'POST' && req.url === '/api/commands') {
-    let body = ''
-    req.on('data', chunk => { body += chunk.toString() })
-    req.on('end', () => {
+    if (!requireAdminAuth(req, res)) return
+
+    parseRequestBody(req, MAX_PROXY_BODY).then((result) => {
+      if (!result.success) {
+        res.writeHead(413)
+        res.end(JSON.stringify({ error: result.error }))
+        return
+      }
+
       try {
+        const body = result.body!
         const payload = JSON.parse(body)
         const { deviceId, command, params } = payload
 
@@ -795,7 +893,7 @@ const server = http.createServer(async (req, res) => {
             pendingRequests.delete(requestId)
             const duration = Date.now() - startTime
             res.writeHead(500)
-            res.end(JSON.stringify({ error: String(error) }))
+            res.end(JSON.stringify({ error: 'Device command failed' }))
 
             // Log error
             requestAudit.logRequest({
@@ -806,7 +904,7 @@ const server = http.createServer(async (req, res) => {
               createdAt: new Date().toISOString(),
               completedAt: new Date().toISOString(),
               duration,
-              error: String(error),
+              error: 'device_command_error',
               version: 1
             })
 
@@ -816,7 +914,7 @@ const server = http.createServer(async (req, res) => {
               status: 'error',
               deviceId,
               command,
-              reason: String(error),
+              reason: 'device_command_error',
               requestId
             })
           },
@@ -836,6 +934,9 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(400)
         res.end(JSON.stringify({ error: 'Invalid request' }))
       }
+    }).catch((err) => {
+      res.writeHead(400)
+      res.end(JSON.stringify({ error: 'Invalid request' }))
     })
     return
   }

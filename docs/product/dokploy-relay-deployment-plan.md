@@ -5,21 +5,114 @@
 **Audience:** DevOps/infrastructure owner deploying BuildFlow relay on Dokploy for v1.2.0-beta.
 
 **See also:**
-- `docs/product/custom-gpt-connection-architecture.md` — Architecture decisions and Phase 5B limitations
+- `docs/product/custom-gpt-connection-architecture.md` — Architecture decisions
 - `docs/product/custom-gpt-self-hosting-model.md` — User setup paths and endpoint model
+
+---
+
+## Deployment Topology
+
+### User-Facing View (Simplified)
+
+From the user's perspective, BuildFlow is **one application**:
+
+```
+User's Machine:
+  $ pnpm local:start
+  → BuildFlow starts (web + agent + relay)
+  → Open http://localhost:3054 (dashboard)
+  → Connect to Custom GPT with one token
+  → Plan, handoff, execute — all integrated
+```
+
+For managed relay (v1.2.0-beta), users do NOT need to:
+- Set up Cloudflare, ngrok, Tailscale, or any tunnel
+- Configure DNS or domains
+- Manage multiple "apps" or ports
+- Run separate relay service on their machine
+
+Everything "just works" with `pnpm local:start`.
+
+### Internal Architecture (Technical)
+
+Internally, BuildFlow has three components connected by well-defined boundaries:
+
+```
+Custom GPT (ChatGPT)                        Users' Local Agents
+    ↓                                                ↑
+    ↓ HTTPS/WSS                                     ↓ WSS
+    ↓                                                ↓
+Public Endpoint: https://buildflow.prochat.tools (reverse proxy with path routing)
+    ↓ Path-based routing ↓
+    ├─ /api/openapi, /api/actions/* → apps/web:3054
+    ├─ /api/register, /api/bridge/ws, /health, /api/admin/* → bridge:3053
+    │
+[Dokploy Container]
+    ├─ apps/web (port 3054)
+    │   ├─ Serves Custom GPT OpenAPI schema
+    │   ├─ Handles Custom GPT action requests
+    │   └─ Calls bridge at localhost:3053 for relay-mode actions
+    │
+    └─ packages/bridge (port 3053)
+        ├─ Registers devices (/api/register)
+        ├─ Accepts WebSocket connections (/api/bridge/ws)
+        ├─ Routes actions to connected devices
+        ├─ Provides health/ready status (/health, /ready)
+        └─ Maintains audit logs and device registry
+        
+                                ↑ WebSocket connection
+                                ↑ (persists while device is online)
+                                |
+                          User's Local Agent
+                          (runs on user's machine)
+```
+
+**Key points:**
+- **Both apps/web and bridge are publicly accessible** at `https://buildflow.prochat.tools` via path-based routing.
+- **apps/web** serves the Custom GPT integration (OpenAPI schema, action endpoints).
+- **bridge** handles device registration, WebSocket connections, and relay routing.
+- **User's local agent** connects outbound to the bridge. The user's machine does not accept inbound connections.
+- Both services are exposed through one public domain for simplicity.
+- No tunnel, DNS, or DNS A records required for users.
+
+**Dokploy deployment details:**
+- Run **two separate services** in the same container or cluster:
+  - `buildflow-web` (apps/web, port 3054)
+  - `buildflow-bridge` (packages/bridge, port 3053)
+- Configure **path-based routing** at the reverse proxy layer:
+  - `/api/openapi`, `/api/actions/*`, `/dashboard` → web:3054
+  - Everything else → bridge:3053
+- Environment in apps/web: `BUILDFLOW_BACKEND_MODE=relay-agent` to forward actions to bridge
+- Environment in bridge: `RELAY_ENABLE_DEFAULT_TOKENS=false`, `RELAY_ADMIN_TOKEN=<secret>`, `BRIDGE_PORT=3053`
+- Rate limiting required at reverse proxy layer (not in relay code)
 
 ---
 
 ## Quick answer: What should Dokploy run?
 
-**Service name:** `buildflow-relay`  
-**Package:** `@buildflow/bridge` (TypeScript, Node.js 20+)  
-**Port:** 3053 (internal), mapped to public HTTPS via reverse proxy (Dokploy default)  
-**Build command:** `pnpm install && pnpm --dir packages/bridge build`  
-**Start command:** `pnpm --dir packages/bridge start`  
-**Data volume:** `/relay-data` (persistent, for device registry and audit logs)  
-**Health check:** `GET /health` (200 OK + JSON with connected device count)  
-**Readiness check:** `GET /ready` (200 OK + data directory writable test)
+Dokploy must run **TWO services** behind one public domain:
+
+| Component | Port | Purpose | Public |
+|-----------|------|---------|--------|
+| apps/web | 3054 | Custom GPT OpenAPI schema, action endpoints, dashboard | Yes |
+| packages/bridge | 3053 | Device registration, WebSocket routing, admin endpoints | Yes |
+
+**Build and start:**
+```bash
+# apps/web
+Build: pnpm install && pnpm --dir apps/web build
+Start: pnpm --dir apps/web start
+
+# packages/bridge
+Build: pnpm install && pnpm --dir packages/bridge build
+Start: pnpm --dir packages/bridge start
+```
+
+**Routing (at public domain https://buildflow.prochat.tools):**
+- `/api/openapi`, `/api/actions/*`, `/dashboard` → apps/web:3054
+- `/api/register`, `/api/bridge/ws`, `/health`, `/ready`, `/api/admin/*` → bridge:3053
+
+**Data volume:** `/relay-data` (persistent storage for bridge device registry and audit logs)
 
 ---
 
@@ -51,10 +144,15 @@ Protocol: HTTPS (automatic via Dokploy's Let's Encrypt)
 Public Paths:
   - /health (GET, no auth, for monitoring)
   - /ready (GET, no auth, for liveness probe)
-  - /api/register (POST, no auth required for device registration in beta)
-  - /api/bridge/ws (WebSocket, authenticated via bearer token)
-  - /api/actions/proxy/* (POST, requires RELAY_PROXY_TOKEN)
+  - /api/register (POST, no auth required; protected by body size limit 4KB, input validation, rate-limiting)
+  - /api/bridge/ws (WebSocket, authenticated via user bearer token)
+  - /api/actions/proxy/* (POST, authenticated via user bearer token, routes to registered device)
   - /api/admin/* (GET/POST, requires RELAY_ADMIN_TOKEN)
+
+**Note on /api/register:** This endpoint is unauthenticated to enable new device registration. Protection comes from:
+1. **Body size limit:** 4 KB max (prevents buffer exhaustion)
+2. **Input validation:** token format (16-256 chars, printable ASCII only), deviceId format validation
+3. **Rate limiting:** Must be configured at reverse proxy layer to prevent registration spam
 ```
 
 ### Environment Variables
@@ -87,7 +185,7 @@ echo "RELAY_ADMIN_TOKEN=$RELAY_ADMIN_TOKEN"
 # 1. Create secret named: RELAY_ADMIN_TOKEN → <value>
 ```
 
-**Note:** `RELAY_PROXY_TOKEN` is no longer needed for user-facing action routing. Each user's device is identified by their own bearer token (the same token they use to authenticate with the local BuildFlow instance). This ensures request isolation and prevents the relay from accidentally routing one user's request to another user's device.
+**Note:** User-facing action routing (`/api/actions/proxy/*`) uses each user's own bearer token, not a shared `RELAY_PROXY_TOKEN`. This ensures request isolation and prevents the relay from accidentally routing one user's request to another user's device. Each user's token is registered independently and maps to their local device.
 
 ### Persistent Volume
 
@@ -111,7 +209,7 @@ echo "RELAY_ADMIN_TOKEN=$RELAY_ADMIN_TOKEN"
 
 ### Health Check: `GET /health`
 
-**Purpose:** Monitoring and debugging connected devices  
+**Purpose:** Operational status and connected device count  
 **No authentication required**  
 **Response (200 OK):**
 ```json
@@ -119,28 +217,21 @@ echo "RELAY_ADMIN_TOKEN=$RELAY_ADMIN_TOKEN"
   "status": "ok",
   "bridgeRunning": true,
   "port": 3053,
-  "connectedDevices": 0,
-  "devices": []
+  "connectedDevices": 0
 }
 ```
 
-**With connected device:**
+**With connected devices:**
 ```json
 {
   "status": "ok",
   "bridgeRunning": true,
   "port": 3053,
-  "connectedDevices": 1,
-  "devices": [
-    {
-      "id": "device-uuid-12345",
-      "status": "online",
-      "lastSeen": "2026-04-27T10:30:15.000Z",
-      "lastHeartbeat": "2026-04-27T10:30:25.000Z"
-    }
-  ]
+  "connectedDevices": 2
 }
 ```
+
+**Privacy note:** This endpoint returns only aggregate count and operational status. Individual device IDs, connection times, and metadata are not exposed publicly. Admin endpoint `/api/admin/devices` is available with `RELAY_ADMIN_TOKEN` for detailed device information.
 
 **Dokploy health check configuration:**
 ```
@@ -222,8 +313,9 @@ pnpm local:restart
 
 3. **Custom GPT action flow**
    - ChatGPT → `POST https://buildflow.prochat.tools/api/actions/proxy/api/search`
-   - Relay validates `RELAY_PROXY_TOKEN` header
-   - Relay sends command over WebSocket to connected agent
+   - Relay authenticates bearer token (user's device token)
+   - Relay looks up device ID associated with that token
+   - Relay sends command over WebSocket to that user's connected agent
    - Agent processes (search local vault)
    - Agent sends result back over WebSocket
    - Relay returns result to ChatGPT (200 OK)
@@ -246,20 +338,17 @@ The relay supports multiple local agents connected simultaneously and routes Cus
 ```
 GET /health
 {
-  "connectedDevices": 2,
-  "devices": [
-    { "id": "device-user-a", "status": "online", "lastHeartbeat": "..." },
-    { "id": "device-user-b", "status": "online", "lastHeartbeat": "..." }
-  ]
+  "status": "ok",
+  "connectedDevices": 2
 }
 
 POST /api/actions/proxy/api/search
 Authorization: Bearer <user-a-token>
-Response: 200 ✓ (routed to device-user-a)
+Response: 200 ✓ (routed to user A's device)
 
 POST /api/actions/proxy/api/search
 Authorization: Bearer <user-b-token>
-Response: 200 ✓ (routed to device-user-b)
+Response: 200 ✓ (routed to user B's device)
 ```
 
 **Code reference:** `packages/bridge/src/server.ts` — `authenticateUserDevice()` function authenticates each request with the bearer token and looks up the associated device.
@@ -295,11 +384,12 @@ WebSocket (bearer token required, token is user's device token):
   wss://buildflow.prochat.tools/api/bridge/ws
   Authorization: Bearer <user-device-token>
 
-Action proxy (bearer token required, routes to device for that token):
+Action proxy (user bearer token required, routes to that user's registered local device):
   POST https://buildflow.prochat.tools/api/actions/proxy/api/search
   POST https://buildflow.prochat.tools/api/actions/proxy/api/read
   POST https://buildflow.prochat.tools/api/actions/proxy/api/write
   Authorization: Bearer <user-device-token>
+  → Relay validates token, looks up deviceId, routes to that device's WebSocket
 
 Admin (RELAY_ADMIN_TOKEN required, ops/monitoring):
   GET https://buildflow.prochat.tools/api/admin/devices
@@ -500,8 +590,8 @@ kill %1
 
 1. **Connected devices count**
    - Endpoint: `GET /health` → `connectedDevices` field
-   - Acceptable range: 0–1 (Phase 5B limit)
-   - Alert if: > 1 (misconfiguration or multi-device attempt)
+   - Acceptable range: 0–N (multi-user relay supported in v1.2.0-beta)
+   - Alert if: > 100 (possible DoS or misconfiguration)
 
 2. **Action proxy request rate**
    - Source: `/relay-data/audit/*.json` (request audit logs)
@@ -532,24 +622,31 @@ kill %1
 
 ---
 
-## Security Hardening (Phase 5B)
+## Security Hardening for v1.2.0-beta
 
 ### Before v1.2.0-beta Launch
 
 ✅ **Required:**
 - [ ] `RELAY_ENABLE_DEFAULT_TOKENS=false` (disables dev tokens in production)
 - [ ] `RELAY_ADMIN_TOKEN` is set to strong random value (32 hex chars)
-- [ ] `RELAY_PROXY_TOKEN` is set to strong random value, different from admin token
 - [ ] HTTPS only: no HTTP (Dokploy enforces via Let's Encrypt)
 - [ ] WSS only: WebSocket Secure (automatic via HTTPS domain)
 - [ ] Device token isolation: each local agent token is independent (Bearer token model)
 - [ ] No token reuse: if token is leaked, rotate and update in user's `.env.local`
+- [ ] Body size limits enforced: max 4 KB for registration, max 64 KB for proxy actions (prevents DoS)
+
+### Rate Limiting (Deploy-Level Requirement)
+
+⚠️ **Required at Dokploy/reverse proxy layer:**
+- `/api/register` should be rate-limited (max requests per IP per minute)
+- `/api/actions/proxy/*` should be rate-limited per token (max requests per minute)
+- WebSocket connections should be rate-limited or monitored for abuse
+- **Implementation:** Use Dokploy's reverse proxy rules or nginx rate-limiting module
+- **Reason:** Relay code enforces body size limits and auth, but does not implement request rate-limiting
 
 ### Not Required for v1.2.0-beta
 
-❌ **Deferred to Phase 5C+:**
-- Multi-device token mapping (added in future version)
-- Rate limiting per device or token (added in future version)
+❌ **Deferred to future versions:**
 - Token expiration and refresh (added in future version)
 - Admin dashboard UI (CLI only for now)
 - Data encryption at rest (files are in persistent volume, owned by pod)

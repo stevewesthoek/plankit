@@ -10,127 +10,138 @@
 
 ## Quick answer: How do I use the Custom GPT with my own local BuildFlow?
 
-**For v1.2.0-beta, you have three options:**
+**For v1.2.0-beta, you have two options:**
 
-1. **Use BuildFlow-managed relay** (RECOMMENDED: no tunnel setup needed)
-   - URL: `https://buildflow.prochat.tools/api/openapi`
-   - Token: your own `BUILDFLOW_ACTION_TOKEN` (generated locally, stored in `.env.local`)
-   - **How it works:** Your local agent connects outbound to a managed relay; relay routes Custom GPT requests to your machine
-   - **Status:** ✅ Works with default setup, data stays local, no external account needed
-   - **See:** → Setup section below
+### Option 1: Use BuildFlow-managed relay (RECOMMENDED for most users) ✅
 
-2. **Use your local endpoint directly** (local testing, no ChatGPT)
-   - URL: `http://127.0.0.1:3054/api/openapi`
-   - Token: Your locally generated `BUILDFLOW_ACTION_TOKEN` (from env var on your machine)
-   - **Limitation:** Custom GPT cannot reach `localhost` from ChatGPT's servers (different network, no public routing)
-   - **Status:** Works for local development only, not for production ChatGPT use
+**URL:** `https://buildflow.prochat.tools/api/openapi`  
+**Token:** Your own `BUILDFLOW_ACTION_TOKEN` (generated locally, stored in `.env.local`)
 
-3. **Use your own public HTTPS tunnel** (advanced, for power users)
-   - Set up a tunnel (Cloudflare Tunnel, ngrok, Tailscale Funnel, etc.) to your local machine
-   - Point the Custom GPT to your tunnel's HTTPS URL
-   - Use your own `BUILDFLOW_ACTION_TOKEN`
-   - **Status:** Fully works, optional for users who prefer to manage their own endpoint
+**How it works:**
+- Your local BuildFlow agent connects outbound to `buildflow.prochat.tools` (managed relay)
+- Relay registers your device and maintains a persistent WebSocket connection
+- Custom GPT sends requests to relay with your token
+- Relay routes requests to your device based on token
+- Results return to Custom GPT (your data stays on your machine)
 
----
+**Setup:**
+```bash
+# 1. Generate your token (do this once)
+BUILDFLOW_ACTION_TOKEN=$(openssl rand -hex 32)
 
-## The endpoint model: What `https://buildflow.prochat.tools` does
+# 2. Set in your .env.local
+echo "BUILDFLOW_ACTION_TOKEN=$BUILDFLOW_ACTION_TOKEN" > apps/web/.env.local
 
-### Current behavior
+# 3. Enable relay mode and start
+export BUILDFLOW_BACKEND_MODE=relay-agent
+pnpm local:start
 
-`https://buildflow.prochat.tools` is the **maintainer's public demonstration endpoint** only.
+# 4. Verify connection
+curl https://buildflow.prochat.tools/health
+# Should show: "connectedDevices": 1
 
-- **Routes to:** The maintainer's local BuildFlow stack (via Cloudflare Tunnel)
-- **Authentication:** Requires the **maintainer's token**, not yours
-- **Use case:** Demonstrating BuildFlow to new users with example context
-- **Security model:** Bearer token (`Authorization: Bearer <token>`)
-- **Your files:** NOT accessible through this endpoint unless you somehow run BuildFlow on the maintainer's machine
-
-### Why it only serves the maintainer
-
-BuildFlow uses simple bearer token authentication:
-
-```typescript
-// apps/web/src/lib/actionAuth.ts
-const token = process.env.BUILDFLOW_ACTION_TOKEN
-
-if (!authHeader || authHeader !== expectedBearer) {
-  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-}
+# 5. Import Custom GPT at https://chatgpt.com/gpts/editor
+# URL: https://buildflow.prochat.tools/api/openapi
+# Auth: Bearer token (from above)
 ```
 
-- When you set your own `BUILDFLOW_ACTION_TOKEN` on your machine, the `/api/actions/*` endpoints will only accept **that token**
-- The public `buildflow.prochat.tools` endpoint uses **a different token** (the maintainer's)
-- If you send your token to the maintainer's endpoint, you'll get a 401 Unauthorized error
-- If you send the maintainer's token to your local endpoint, you'll get a 401 error
+**Status:** ✅ Works out of the box, no tunnel setup, data stays local, no external account needed
 
-**Result:** Each BuildFlow instance is isolated by token. You cannot access your local files through the maintainer's tunnel.
+### Option 2: Use your own public HTTPS tunnel (for users who prefer self-hosting)
+
+**When:** You want complete control over your endpoint and don't use the managed relay.
+
+**Setup:**
+- Install tunnel provider: Cloudflare, ngrok, Tailscale Funnel, or similar
+- Point tunnel to `http://localhost:3054`
+- Use tunnel's HTTPS URL in Custom GPT OpenAPI import
+- Use your own `BUILDFLOW_ACTION_TOKEN`
+
+**Status:** ✅ Fully works, optional, for advanced users only
 
 ---
 
-## Can a public Custom GPT safely access a user's local BuildFlow?
+## The endpoint model: How the managed relay routes to your device
 
-### No, not without a user-owned tunnel.
+### How `https://buildflow.prochat.tools` works with your token
 
-**Why:**
+`https://buildflow.prochat.tools` is a **public relay endpoint** that routes requests to connected user devices.
 
-1. **ChatGPT runs on OpenAI's servers** — it cannot make HTTP requests to `127.0.0.1` or `localhost` on your machine
-2. **The maintainer's tunnel only reaches the maintainer's machine** — it does not route to your machine
-3. **BuildFlow has no relay/routing layer in v1.2.0-beta** that can multiplex requests to different user machines
+- **Registration:** When you start BuildFlow with relay mode enabled, your local agent registers with the relay using your `BUILDFLOW_ACTION_TOKEN`
+- **Connection:** Relay stores a mapping: `token → deviceId` and opens a WebSocket connection to your agent
+- **Routing:** When Custom GPT sends a request with your token, relay looks up your device and forwards the command
+- **Execution:** Your local agent processes the request against your files
+- **Response:** Results return to relay, which sends them back to Custom GPT
+- **Security:** Each token is independent; relay cannot route one user's requests to another user's device
 
-### Relay/device coordination exists but is not configured for this
+### Multi-user isolation
 
-The bridge package (`packages/bridge/`) contains infrastructure for device registry and WebSocket-based routing:
+- **Each user has their own token** (generated locally, never shared)
+- **Each token maps to one device** (your local agent)
+- **Relay validates token before routing** (401 Unauthorized if token is invalid or not registered)
+- **Your files only:** Only your device can access your files; relay is just a pass-through
 
-```typescript
-// packages/bridge/src/storage/device-registry.ts
-export function saveDevice(device: PersistedDevice): void {
-  // Stores device metadata locally
-}
+**Example:**
+```
+User A's token "abc123..." → routes to User A's device
+User B's token "def456..." → routes to User B's device
+Unknown token "xyz789..." → returns 401 Unauthorized
 ```
 
-**However:**
+### Privacy model
 
-- This infrastructure is **not wired up in the public endpoint** for v1.2.0-beta
-- There is no public device discovery or per-user routing
-- The v1.2.0-beta release focuses on **local-first setup**, not multi-device coordination
-- **Status for v1.2.0-beta:** Device relay is infrastructure for future Pro/Team features, not available now
+- **Your files stay local** on your machine only
+- **Queries and results transit relay memory** while processing (not persisted)
+- **Relay has in-memory access during transit** (no end-to-end encryption in v1.2.0-beta)
+- **Transport is HTTPS/WSS** (encrypted in transit over network)
+- **Audit logs contain metadata only** (no payloads, queries, or file content)
+
+**Honest statement:** The relay operator technically has in-memory visibility of requests while they're being routed. This is a trade-off for not requiring you to set up and manage your own tunnel. If you prefer complete privacy, use the tunnel option (Option 2 above) instead.
 
 ---
 
-## The recommended v1.2.0-beta setup for self-hosted users
-
-### Setup path: Local testing only (no Custom GPT)
-
-**When:** You're testing BuildFlow locally and don't need ChatGPT integration yet.
+## Recommended setup: Use the managed relay (most users)
 
 **Steps:**
 
-1. Clone the repo and run `pnpm dev` or `pnpm local:restart`
-2. Agent runs on `http://127.0.0.1:3052`
-3. Relay runs on `http://127.0.0.1:3053` (if `BUILDFLOW_BACKEND_MODE=relay-agent`)
-4. Web/OpenAPI runs on `http://127.0.0.1:3054`
-5. Use the dashboard at `http://localhost:3054/dashboard`
-6. **Custom GPT:** Not usable yet (localhost is not reachable from ChatGPT)
+1. Clone the repo: `git clone https://github.com/stevewesthoek/buildflow.git`
 
-**Token setup:**
+2. Generate your token (run once):
+   ```bash
+   BUILDFLOW_ACTION_TOKEN=$(openssl rand -hex 32)
+   echo "BUILDFLOW_ACTION_TOKEN=$BUILDFLOW_ACTION_TOKEN" > apps/web/.env.local
+   ```
 
-```bash
-# Generate a token (run once)
-BUILDFLOW_ACTION_TOKEN=$(openssl rand -hex 32)
-echo "BUILDFLOW_ACTION_TOKEN=$BUILDFLOW_ACTION_TOKEN"
-# Store it in apps/web/.env.local
-echo "BUILDFLOW_ACTION_TOKEN=$BUILDFLOW_ACTION_TOKEN" > apps/web/.env.local
-```
+3. Set relay mode and start:
+   ```bash
+   export BUILDFLOW_BACKEND_MODE=relay-agent
+   pnpm install
+   pnpm local:start
+   ```
 
-**Verification:**
+4. Verify relay connection:
+   ```bash
+   # Should show: "connectedDevices": 1
+   curl https://buildflow.prochat.tools/health
+   ```
 
-```bash
-# Should return 200 with BuildFlow status
-curl -H "Authorization: Bearer $BUILDFLOW_ACTION_TOKEN" \
-  http://127.0.0.1:3054/api/actions/status
-```
+5. Create Custom GPT:
+   - Go to https://chatgpt.com/gpts/editor (ChatGPT Plus required)
+   - Click "Create new action"
+   - Click "Import from URL"
+   - Enter: `https://buildflow.prochat.tools/api/openapi`
+   - Set auth type: Bearer token
+   - Paste your `BUILDFLOW_ACTION_TOKEN` (from step 2)
+   - Click "Import"
+   - Test with: "Get BuildFlow status"
 
-### Setup path: Custom GPT with your own tunnel (recommended for real usage)
+6. Test end-to-end:
+   - Ask ChatGPT: "List my BuildFlow sources"
+   - Ask ChatGPT: "Search my context for [something]"
+
+---
+
+## Alternative setup: Use your own tunnel (for power users)
 
 **When:** You want to use the Custom GPT with your own local BuildFlow instance.
 
@@ -201,30 +212,50 @@ curl -H "Authorization: Bearer $BUILDFLOW_ACTION_TOKEN" \
    - In the GPT, ask: "Search my context for [something]"
    - Verify your local files appear
 
+**Important notes for tunnel users:**
+- Keep the tunnel running while you use the Custom GPT. If the tunnel stops, Custom GPT requests will fail.
+- For persistent setup, create a permanent named tunnel (see your tunnel provider's docs) and run it in the background.
+- Some tunnel providers (ngrok free tier) have short session limits; upgrade or use Cloudflare for longer sessions.
+
 ---
 
-## The maintainer endpoint: What works today
+---
 
-### `https://buildflow.prochat.tools/api/openapi`
+## Privacy and Security Model for the Managed Relay
 
-**Current state:** A working example endpoint to import into ChatGPT.
+### What data transits the relay
 
-**What it does:**
-- Returns a valid OpenAPI 3.1.0 schema with the BuildFlow Custom GPT actions
-- Accepts requests with the maintainer's bearer token
-- Routes to the maintainer's local BuildFlow environment
-- Demonstrates what BuildFlow does (searching, reading, writing to local context)
+**During your Custom GPT requests:**
+- Queries (e.g., "search my context for...")
+- Search results and file contents
+- Write operations and artifact creation
 
-**What it doesn't do:**
-- Serve your files
-- Route to your machine
-- Accept your token
-- Support multi-device relay (yet)
+**These transit the relay in memory while being processed, then are discarded. They are not persisted to disk.**
 
-**Use case:** 
-- Seeing BuildFlow in action without setting up a tunnel
-- Understanding the Custom GPT integration
-- Sharing a demo with others (showing the maintainer's context)
+### What's NOT logged
+
+- Search queries
+- File content
+- Response bodies
+- Bearer tokens
+- Raw error messages from your device
+
+**What IS logged (metadata only):**
+- Request ID and timestamp
+- Action name (e.g., "action_proxy:search")
+- Status (success/error/timeout)
+- Duration
+
+### Privacy trade-off
+
+The managed relay at `https://buildflow.prochat.tools` is convenient for users who don't want to set up a tunnel. The trade-off:
+
+- ✅ No tunnel setup or DNS configuration needed
+- ✅ Files stay on your machine
+- ✅ Transport is encrypted (HTTPS/WSS)
+- ⚠️ Relay operator has in-memory access to requests while routing
+
+**If you need stronger privacy:** Use Option 2 (your own tunnel). That way, you control the endpoint and keep complete privacy.
 
 ---
 
@@ -232,50 +263,55 @@ curl -H "Authorization: Bearer $BUILDFLOW_ACTION_TOKEN" \
 
 ### v1.2.0 (stable Free GitHub)
 
-- Same local-first model
+- Same managed relay model
+- Performance monitoring and rate limiting added
 - Docs refined based on beta feedback
-- Tunnel setup recommendations clarified
-- Troubleshooting for common tunnel configurations added
+- Support for multiple local agents per user (future version)
 
-### Future: BuildFlow Pro and device relay (not in v1.2.0-beta)
+### Future: BuildFlow Pro and advanced relay features
 
-The relay infrastructure in `packages/bridge/` is designed for:
-- Per-user device registration
-- Token-scoped device routing
-- Multi-device coordination
-- Hosted relay for Pro users
-
-**Status for v1.2.0-beta:** Foundations exist, not exposed. Relay is infrastructure for future features.
+- Team device sharing
+- Advanced rate limiting and quotas
+- Custom relay endpoints for Pro users
+- Optional end-to-end encryption
 
 ---
 
 ## FAQ: Custom GPT endpoint and self-hosting
 
-### Q: Can I use the maintainer's endpoint with my own token?
+### Q: How does the managed relay route my requests to my device?
 
-**A:** No. The maintainer's endpoint is hardcoded to accept only the maintainer's token. If you send your token, you'll get 401 Unauthorized.
+**A:** The relay stores a mapping of token → device. When you start BuildFlow with relay mode, your device connects to the relay via WebSocket. When Custom GPT sends a request with your token, the relay looks it up and forwards the command to your device's WebSocket connection. Results return to relay, which sends them back to ChatGPT. No tunneling needed.
 
-### Q: Can I use the maintainer's endpoint to access my files without a tunnel?
+### Q: Is my token secure?
 
-**A:** No. The tunnel points to the maintainer's machine, not yours. Even with a valid token, your files are not on the maintainer's machine.
+**A:** Your token is:
+- Generated locally (never leaves your machine initially)
+- Sent to relay only when your device connects (WebSocket over WSS)
+- Used to authenticate each Custom GPT request (Bearer token, HTTPS header)
+- Never logged by the relay in plaintext
 
-### Q: If I set up a tunnel, do I need to change anything in my code?
+Do not share your token. If compromised, rotate it by generating a new one and restarting BuildFlow.
 
-**A:** No. BuildFlow automatically works with any HTTPS URL pointing to `http://127.0.0.1:3054` on your machine. Just update the Custom GPT to use your tunnel URL.
+### Q: Will the relay operator access my files?
 
-### Q: Is the token sent to ChatGPT in plaintext?
+**A:** No. Your files stay on your machine. However, the relay operator technically has in-memory visibility of request/response data while routing. This is a trade-off for convenience (no tunnel setup). If you prefer complete privacy, use your own tunnel instead.
 
-**A:** No. The token is sent via HTTPS `Authorization: Bearer` header (not in the URL). ChatGPT stores the token securely in the Custom GPT's authentication settings.
+### Q: What if I set up my own tunnel instead?
 
-### Q: Can I use the relay without a tunnel?
+**A:** You can set up Cloudflare Tunnel, ngrok, or Tailscale Funnel pointing to your local BuildFlow at `http://localhost:3054`. Then use your tunnel URL in the Custom GPT import. You maintain complete control of your endpoint.
 
-**A:** Not in v1.2.0-beta. The relay (`http://127.0.0.1:3053`) is for local agent coordination. For ChatGPT access, you need an HTTPS tunnel (network requirement, not BuildFlow limitation).
+### Q: Is the token sent over HTTPS?
+
+**A:** Yes. The token is sent via `Authorization: Bearer` header over HTTPS (never in URL or plaintext). ChatGPT stores it securely in the Custom GPT's authentication settings.
 
 ### Q: What if I use the wrong token?
 
-**A:** You'll get a 401 Unauthorized error. Verify your token matches the `BUILDFLOW_ACTION_TOKEN` env var on your machine.
+**A:** You'll get a 401 Unauthorized error. Verify your token matches the `BUILDFLOW_ACTION_TOKEN` env var and that your device is connected (check `curl https://buildflow.prochat.tools/health`).
 
-### Q: Can multiple users share one tunnel?
+### Q: Can multiple users use the same relay instance?
+
+**A:** Yes. Each user has their own token and their own connected device. The relay isolates them by token—no cross-contamination.
 
 **A:** Technically yes, but **not recommended**. Each user should set their own token and have their own tunnel. Sharing a tunnel + token = sharing full file access to both BuildFlow instances.
 
@@ -283,24 +319,20 @@ The relay infrastructure in `packages/bridge/` is designed for:
 
 **A:** BuildFlow returns appropriate CORS headers. Preflight (OPTIONS) requests are handled by the web layer. If you get a CORS error, verify your tunnel is correctly proxying HTTPS requests.
 
-### Q: Do I need to keep the tunnel running?
-
-**A:** Yes. When ChatGPT calls your Custom GPT, it needs to reach your tunnel to get your files. If the tunnel is down, the Custom GPT won't work.
-
 ---
 
-## Beta blockers (v1.2.0-beta release gates)
+## Beta readiness checklist (v1.2.0-beta)
 
-Before v1.2.0-beta is marked ready, these must be true:
+Before v1.2.0-beta is marked ready:
 
 - [ ] OpenAPI schema is valid and importable into ChatGPT Custom GPT editor
-- [ ] Local endpoint returns 200 for `/api/openapi` with valid token
-- [ ] Local endpoint returns 401 without token or with wrong token
-- [ ] `https://buildflow.prochat.tools/api/openapi` returns 200 (public endpoint working)
-- [ ] Custom GPT actions execute successfully against both local (via tunnel) and maintainer endpoints
-- [ ] Bearer token authentication works for all documented scenarios
-- [ ] Documentation clearly distinguishes maintainer endpoint, local endpoint, and self-hosted tunnel
-- [ ] At least one fresh-install user has tested Custom GPT setup from the README without help
+- [ ] Managed relay endpoint at `https://buildflow.prochat.tools/api/openapi` returns 200
+- [ ] Custom GPT actions execute successfully through managed relay with valid token
+- [ ] Custom GPT returns 401 Unauthorized without token or with invalid token
+- [ ] Bearer token authentication works end-to-end
+- [ ] Multi-user routing is verified (multiple devices connected simultaneously)
+- [ ] At least one fresh-install user has tested managed relay setup from the README without help
+- [ ] Tunnel setup documentation is available for advanced users who prefer self-hosting
 
 ---
 
@@ -360,7 +392,7 @@ curl -H "Authorization: Bearer $BUILDFLOW_ACTION_TOKEN" \
   http://127.0.0.1:3054/api/openapi | jq '.info.title'
 ```
 
-**Public endpoint (maintainer only):**
+**Public endpoint (if deployed):**
 ```bash
 # 6. Public endpoint returns 200
 curl https://buildflow.prochat.tools/api/openapi | jq '.info.title'
