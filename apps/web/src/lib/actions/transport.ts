@@ -45,7 +45,8 @@ export async function executeAction(
     if (err instanceof ActionTransportError) {
       throw err
     }
-    throw new ActionTransportError(String(err), 500)
+    // Hide implementation details from client; don't expose raw error messages
+    throw new ActionTransportError('Backend request failed', 503)
   }
 }
 
@@ -53,17 +54,41 @@ export async function executeActionGET(
   endpoint: string,
   userToken?: string
 ): Promise<{ data: unknown; status: number }> {
-  const backendUrl = getBackendUrl()
   const mode = getBackendMode()
+  const backendUrl = getBackendUrl()
+
+  // In relay-agent mode: convert to POST through proxy endpoint (cleaner than bridge GET support)
+  if (mode === 'relay-agent') {
+    // Convert /api/status -> /api/actions/proxy/api/status
+    const proxyEndpoint = `/api/actions/proxy${endpoint}`
+    const url = `${backendUrl}${proxyEndpoint}`
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+
+      if (userToken) {
+        headers['Authorization'] = `Bearer ${userToken}`
+      }
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({})
+      })
+
+      const data = await response.json().catch(() => ({}))
+      return { data, status: response.status }
+    } catch (err) {
+      // Hide implementation details; don't expose raw error messages
+      throw new ActionTransportError('Backend request failed', 503)
+    }
+  }
+
+  // In direct-agent mode: use GET as normal
   const url = `${backendUrl}${endpoint}`
 
   try {
     const headers: Record<string, string> = { 'Cache-Control': 'no-store' }
-
-    // In relay-agent mode, forward the user's bearer token to the bridge
-    if (mode === 'relay-agent' && userToken) {
-      headers['Authorization'] = `Bearer ${userToken}`
-    }
 
     const response = await fetch(url, {
       method: 'GET',
@@ -74,6 +99,7 @@ export async function executeActionGET(
     const data = await response.json().catch(() => ({}))
     return { data, status: response.status }
   } catch (err) {
-    throw new ActionTransportError(String(err), 503)
+    // Hide implementation details; don't expose raw error messages
+    throw new ActionTransportError('Backend request failed', 503)
   }
 }

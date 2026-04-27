@@ -90,6 +90,19 @@ Public Endpoint: https://buildflow.prochat.tools (reverse proxy with path routin
 
 ---
 
+## Design Principle: Dumb GPT, Dumb Relay, Smart Local App
+
+**See also:** [Architecture Decision: Design Principle](./custom-gpt-connection-architecture.md#design-principle-dumb-gpt-dumb-relay-smart-local-app)
+
+In brief:
+- **GPT** has no business logic; it only submits requests and exposes action names.
+- **Relay** has no product logic; it authenticates, routes, and logs metadata only.
+- **Local app** has all the intelligence and is where features live.
+
+**Deployment implication:** The relay deployed here is intentionally stateless and dumb. Do not add feature logic, caching, or business rules to the relay. Keep all that in the local BuildFlow app.
+
+---
+
 ## Quick answer: What should Dokploy run?
 
 Dokploy must run **TWO services** behind one public domain:
@@ -758,6 +771,37 @@ Audit logs contain only **metadata**, never payloads:
 
 ---
 
+## Future Admin Dashboard (Phase 2+)
+
+**Not built for v1.2.0-beta, but designed for:**
+
+A future admin dashboard will monitor relay health and operational metrics. Current audit logs and metadata are designed to support it safely:
+
+**What the dashboard will show:**
+- Relay health: uptime, connected device count, error rates
+- Device metrics: connection count, last seen timestamp, request count per device
+- Request telemetry: total requests, success/error/timeout breakdown, response latencies, failure categories
+- Abuse signals: repeated 401s, 503s, or rate-limit hits per token
+
+**What the dashboard will NEVER show (privacy by design):**
+- File contents, search results, code snippets, or response bodies
+- Prompts, queries, or user input
+- Bearer tokens or any credential material
+- Raw device errors or stack traces
+- Request bodies or action parameters
+
+**Current safeguards (to support future dashboard):**
+- Audit logs contain only metadata: `requestId`, `deviceId`, `command`, `status`, `duration`, `timestamp`, `error` (category only, not message)
+- Never log tokens, file paths, response bodies, or user input
+- All errors returned to client are generic: "Backend service unavailable" instead of implementation details
+
+**If adding new metrics to relay in the future:**
+- Follow this privacy model strictly
+- Any new field must be auditable (what is it, why do we log it, does it reveal user data?)
+- Test: would this field be safe to show to a non-eng relay operator?
+
+---
+
 ## Next Steps After v1.2.0-beta Launch
 
 1. **Monitor relay usage and request patterns**
@@ -775,6 +819,7 @@ Audit logs contain only **metadata**, never payloads:
    - Team workspace routing
    - Advanced device management
    - Request rate limiting and quotas
+   - Admin dashboard for relay operators
 
 ---
 

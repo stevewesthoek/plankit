@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 /**
- * Verify web-layer token passthrough for relay-agent mode
+ * Comprehensive relay-agent mode verification
  *
- * Tests that apps/web forwards incoming user bearer tokens to bridge
- * instead of using a global BUILDFLOW_ACTION_TOKEN
+ * Tests:
+ * 1. Web-layer authentication (401 for missing/invalid token)
+ * 2. Multi-user token isolation (token A reaches device A)
+ * 3. GET route support (status, list-sources via POST internally)
+ * 4. Offline device handling (503 with valid token)
+ * 5. No implementation details leaked in errors
  *
  * Usage:
  *   node scripts/verify-web-token-passthrough.js [web_url] [bridge_url]
@@ -20,6 +24,7 @@ const BRIDGE_URL = process.argv[3] || 'http://localhost:3053';
 
 const USER_TOKEN_A = 'test-token-user-a-' + Math.random().toString(36).slice(2);
 const USER_TOKEN_B = 'test-token-user-b-' + Math.random().toString(36).slice(2);
+const INVALID_TOKEN = 'invalid-token-' + Math.random().toString(36).slice(2);
 const DEVICE_ID_A = 'device-' + Math.random().toString(36).slice(2, 8);
 const DEVICE_ID_B = 'device-' + Math.random().toString(36).slice(2, 8);
 
@@ -122,8 +127,35 @@ async function main() {
     }
   });
 
-  // Step 3: Verify token isolation (token A doesn't work for device B requests, etc)
-  console.log('\n3. Testing token isolation...');
+  // Step 3: Verify GET routes work (status, list-sources)
+  console.log('\n3. Testing GET routes via relay-aware transport...');
+
+  await test('GET /api/actions/status with valid token (no 404)', async () => {
+    const res = await makeRequest(WEB_URL, 'GET', '/api/actions/status', USER_TOKEN_A);
+    // Should not be 404 (which would indicate GET not supported)
+    // May be 503 if device offline, that's OK
+    if (res.statusCode === 404) {
+      throw new Error(`GET /api/actions/status returned 404 (not supported)`);
+    }
+    if (res.statusCode >= 500 && res.statusCode !== 503 && res.statusCode !== 504) {
+      throw new Error(`Unexpected server error ${res.statusCode}: ${JSON.stringify(res.body)}`);
+    }
+  });
+
+  await test('GET /api/actions/sources with valid token (no 404)', async () => {
+    const res = await makeRequest(WEB_URL, 'GET', '/api/actions/sources', USER_TOKEN_B);
+    // Should not be 404 (which would indicate GET not supported)
+    // May be 503 if device offline, that's OK
+    if (res.statusCode === 404) {
+      throw new Error(`GET /api/actions/sources returned 404 (not supported)`);
+    }
+    if (res.statusCode >= 500 && res.statusCode !== 503 && res.statusCode !== 504) {
+      throw new Error(`Unexpected server error ${res.statusCode}: ${JSON.stringify(res.body)}`);
+    }
+  });
+
+  // Step 4: Verify token isolation (token A doesn't work for device B requests, etc)
+  console.log('\n4. Testing token isolation...');
 
   await test('Different tokens are isolated', async () => {
     // Both tokens should reach the auth layer, but would route to different devices
@@ -136,13 +168,34 @@ async function main() {
     }
   });
 
-  // Step 4: Verify invalid token returns 401
-  console.log('\n4. Testing invalid credentials...');
+  // Step 5: Verify invalid token returns 401
+  console.log('\n5. Testing invalid credentials...');
 
-  await test('Invalid token returns 401', async () => {
-    const res = await makeRequest(WEB_URL, 'POST', '/api/actions/search', 'invalid-token-xyz', { query: 'test' });
+  await test('Invalid token returns 401 on POST', async () => {
+    const res = await makeRequest(WEB_URL, 'POST', '/api/actions/search', INVALID_TOKEN, { query: 'test' });
     if (res.statusCode !== 401) {
       throw new Error(`Expected 401, got ${res.statusCode}`);
+    }
+  });
+
+  await test('Invalid token returns 401 on GET', async () => {
+    const res = await makeRequest(WEB_URL, 'GET', '/api/actions/status', INVALID_TOKEN);
+    if (res.statusCode !== 401) {
+      throw new Error(`Expected 401, got ${res.statusCode}`);
+    }
+  });
+
+  // Step 6: Verify no implementation details leaked
+  console.log('\n6. Testing error privacy...');
+
+  await test('Errors do not expose implementation details', async () => {
+    const res = await makeRequest(WEB_URL, 'GET', '/api/actions/status', USER_TOKEN_A);
+    // If offline (503), check error message is generic
+    if (res.statusCode === 503) {
+      const errorMsg = res.body?.error || '';
+      if (errorMsg.includes('http://') || errorMsg.includes('localhost') || errorMsg.includes('ECONNREFUSED')) {
+        throw new Error(`Error message leaks implementation: ${errorMsg}`);
+      }
     }
   });
 
@@ -153,7 +206,13 @@ async function main() {
     console.log('⚠️  Some tests failed. Review output above.');
     process.exit(1);
   } else {
-    console.log('✅ All tests passed! Token passthrough verified.\n');
+    console.log('✅ All tests passed!\n');
+    console.log('Verified:');
+    console.log('  • Web-layer authentication (401 for invalid/missing token)');
+    console.log('  • Multi-user token isolation');
+    console.log('  • GET routes work via relay-aware transport');
+    console.log('  • No 404s for status/list-sources');
+    console.log('  • Error messages do not leak implementation details\n');
     process.exit(0);
   }
 }

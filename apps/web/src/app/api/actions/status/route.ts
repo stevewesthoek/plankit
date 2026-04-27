@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       )
     }
     return NextResponse.json(
-      { error: `Failed to reach agent: ${String(err)}` },
+      { error: 'Backend service unavailable' },
       {
         status: 503,
         headers: {

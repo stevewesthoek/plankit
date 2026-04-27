@@ -206,6 +206,38 @@ The bridge package contains **relay implementation with full multi-user routing*
 
 ---
 
+---
+
+## Design Principle: Dumb GPT, Dumb Relay, Smart Local App
+
+This section documents the core architectural principle that guides BuildFlow's design:
+
+### The Principle
+
+1. **Custom GPT is dumb.** It contains no BuildFlow business logic, product features, or app-specific knowledge. It only exposes action names, accepts user requests as structured parameters, and submits them as read-only or write-only operations. GPT evolves slowly (requires Custom GPT import) and is difficult to update.
+
+2. **Relay is dumb.** It contains no product logic, feature decisions, or business rules. It authenticates requests, routes them to the correct device based on bearer token → device mapping, enforces request size limits, rate-limits if needed, and logs safe metadata only (no request bodies, file contents, or response details). Relay is the thinnest possible proxy.
+
+3. **Local BuildFlow app is smart.** It contains all product logic, validation, business rules, optimizations, and feature logic. The app runs on the user's machine, doesn't require deployment, and is the primary surface for innovation.
+
+### Implications
+
+- **Feature requests belong in the local app**, not in GPT or relay. Add them to the CLI, web app, or agent code.
+- **GPT and relay changes should be rare** and compatibility-preserving. Changing either breaks existing user setups.
+- **New data flows should stay local** unless impossible. Relay should only route, never enrich, transform, or apply logic.
+- **Users update the local app frequently** (every session or daily). They update GPT rarely (once per major version or when features are removed/added).
+- **Future hosted relay (Pro)** should follow the same principle: smart account system, dumb routing, and delegate all product logic to the local or hosted app layer.
+
+### Example: Search Action
+
+- **GPT's role:** Expose `POST /api/actions/search` with `query` parameter. Send to relay.
+- **Relay's role:** Authenticate bearer token, find the device, route the request over WebSocket, return the response.
+- **Local app's role:** Receive the search request, validate the query, search the local vault, rank results, respect user preferences, return structured results.
+
+If we wanted to add "search with AI ranking" or "search with custom filters," we add that to the local app, not GPT or relay. GPT just forwards `query` to the same endpoint.
+
+---
+
 ## Why the Managed Relay is Safe for v1.2.0-beta
 
 ### Trust model
@@ -250,10 +282,11 @@ The bridge package contains **relay implementation with full multi-user routing*
 **Goal:** Single public relay instance supports free GitHub users
 
 - [ ] **Task 1.1:** Deploy bridge server to `buildflow.prochat.tools` infrastructure
-  - Set `RELAY_PROXY_TOKEN` for public proxy authentication
+  - Set `RELAY_ADMIN_TOKEN` for admin endpoints (device management, audit logs)
   - Configure HTTPS termination
-  - Enable admin endpoints with authentication
+  - Enable health/readiness checks
   - Implement logging and monitoring
+  - Device tokens are registered per user (not a global shared token)
 
 - [ ] **Task 1.2:** Update web app to expose public relay option
   - Add `.env.NEXT_PUBLIC_RELAY_URL=https://buildflow.prochat.tools`
@@ -347,10 +380,11 @@ The bridge relay foundation exists (Phase 5B/5C), but v1.2.0-beta launch require
    - Do NOT require AWS/Kubernetes—simple Docker hosting acceptable for beta
 
 2. **Security hardening** (~2 hours)
-   - Set production auth tokens: `RELAY_PROXY_TOKEN`, `RELAY_ADMIN_TOKEN` (non-empty, strong)
+   - Set `RELAY_ADMIN_TOKEN` to a strong random secret (admin endpoints only)
    - Disable dev tokens: `RELAY_ENABLE_DEFAULT_TOKENS=false`
    - Enable HTTPS/WSS termination under `buildflow.prochat.tools` domain
-   - Implement request logging and audit trail
+   - Device tokens are user-generated and registered per user; no global proxy token
+   - Implement request logging and audit trail (metadata only, no credentials)
 
 3. **Testing and validation** (~2–4 hours)
    - End-to-end test: Custom GPT action → relay → local agent (all 8 Custom GPT actions)
