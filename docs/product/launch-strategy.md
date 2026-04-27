@@ -20,6 +20,11 @@ BuildFlow Pro should monetize convenience, hosted reliability, managed execution
 
 ## Phase 1: Free GitHub launch
 
+Phase 1 now has two explicit release gates:
+
+- **v1.2.0-beta:** public self-hosted GitHub beta. This is the current highest priority.
+- **v1.2.0:** stable Free GitHub release after beta feedback and onboarding friction are resolved.
+
 Goal:
 
 Launch BuildFlow as a complete local-first open-source product that can be showcased publicly, earn trust, attract GitHub stars, and support marketing on X, Facebook, and other channels.
@@ -153,6 +158,52 @@ Team should include:
 - team billing
 
 Team should not be part of the first free GitHub launch.
+
+## Free GitHub v1.2.0-beta release gate
+
+v1.2.0-beta is good enough to market publicly when a first-time technical user can complete the local workflow from the README without private help.
+
+Required beta outcomes:
+
+1. clone the repo and install dependencies from one clear path
+2. start the local stack with a documented command
+3. open the dashboard and understand the five main sections
+4. connect a local source and see index/readiness status
+5. configure the accompanying Custom GPT from documented steps
+6. understand whether they should use `buildflow.prochat.tools`, a local URL, or their own tunnel
+7. search/read local context from ChatGPT
+8. generate or inspect a local plan/execution packet
+9. copy Codex and Claude Code handoff prompts
+10. recover from common setup failures using troubleshooting docs
+11. know how to open issues, discussions, stars, and contributions
+
+The beta may still be marked early, but it must not feel like a private developer-only experiment.
+
+### Public repository readiness for v1.2.0-beta
+
+The GitHub repo should be treated as a product surface. Before public beta marketing, it should include:
+
+- an optimized root README with clear value proposition, screenshots/GIF path, quickstart, architecture, privacy, and contribution call-to-action
+- a self-hosting guide for local setup and maintenance
+- a Custom GPT setup guide with the GPT link once available
+- a troubleshooting guide for auth, ports, tunnel, indexing, stale cache, and service health
+- GitHub issue templates for bugs, questions, ideas, and first-run setup friction
+- GitHub discussion guidance if discussions are enabled
+- contributor guidance and development commands
+- release checklist for v1.2.0-beta
+- public commit-message discipline that makes the project history clear, intentional, and inviting
+
+### Public communication goals for v1.2.0-beta
+
+BuildFlow will be built in public. Public messaging should invite participation without overclaiming maturity.
+
+The beta should communicate:
+
+- local-first and open-source
+- useful today for ChatGPT-to-Codex/Claude handoff
+- early, active, and improving quickly
+- stars, issues, discussions, and workflow feedback are welcome
+- Pro SaaS and Team are later, not required for the free local workflow
 
 ## Free vs Pro boundary
 

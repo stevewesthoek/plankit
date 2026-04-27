@@ -16,6 +16,9 @@ This directory is the canonical documentation path for BuildFlow planning, relea
 ## Additional product docs
 
 - [Launch strategy](./launch-strategy.md)
+- [v1.2.0-beta release gate](./beta-release-gate.md)
+- [Custom GPT connection architecture](./custom-gpt-connection-architecture.md) — Architecture decision for managed relay
+- [Custom GPT endpoint model and self-hosting setup](./custom-gpt-self-hosting-model.md) — User setup guide
 - [Dashboard design brief](./dashboard-design-brief.md)
 
 ## Source of truth hierarchy

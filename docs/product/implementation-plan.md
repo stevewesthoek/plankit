@@ -116,9 +116,81 @@ Use these tasks when starting the v1.1 documentation foundation. Keep them file-
   - it says reasoning/design should happen before task handoff
 - **Verification:** `sed -n '1,260p' docs/product/implementation-plan.md`
 
+## v1.2.0-beta Free GitHub execution guidance
+
+The current highest-priority implementation target is **BuildFlow v1.2.0-beta**, the public self-hosted GitHub beta.
+
+All work before v1.2.0-beta should be filtered through first-run public usefulness:
+
+> Does this make a first-time self-hosted GitHub user more likely to install, understand, trust, use, star, share, or contribute to BuildFlow?
+
+If the answer is no, defer it unless it fixes a serious reliability, safety, documentation, or onboarding problem.
+
+### v1.2.0-beta implementation lanes
+
+Use these lanes to organize work. Keep tasks narrow and file-scoped within each lane.
+
+1. **Dashboard readiness**
+   - fixed-viewport control center
+   - no clipped essential information at common laptop sizes
+   - source, context, plan, handoff, and settings panes understandable without private explanation
+   - empty/loading/error/connected states clear
+   - light/dark mode stable
+
+2. **Self-hosting onboarding**
+   - root README quickstart works from a fresh clone
+   - one recommended local start path is obvious
+   - ports 3052, 3053, and 3054 are explained
+   - environment token setup is documented
+   - setup and maintenance docs cover start, stop, restart, rebuild, verify, and troubleshooting
+
+3. **Custom GPT integration**
+   - explain the accompanying BuildFlow Custom GPT and link it when available
+   - explain how to import or use the OpenAPI schema
+   - explain Bearer token setup
+   - explain the difference between the maintainer/public `buildflow.prochat.tools` endpoint, local URLs, and a user's own tunnel/domain
+   - do not imply that every user's local files automatically connect through the maintainer's tunnel unless that is verified and intentionally supported
+
+4. **Packaging and repo readiness**
+   - root-level commands are simple and documented
+   - repo structure is understandable
+   - first-run friction is captured as issues or beta blockers
+   - issue/discussion/contribution templates invite participation
+   - commit messages are clear, public, and show active improvement
+
+5. **Marketing readiness**
+   - README explains value in the first screen
+   - demo flow is reproducible
+   - screenshots/GIF/video path exists
+   - GitHub profile/repo setup encourages stars, discussions, questions, and shares
+   - public messaging stays honest: local-first beta, useful today, still improving
+
+### v1.2.0-beta task format
+
+Every pre-beta task should include:
+
+- release lane: dashboard, onboarding, Custom GPT, packaging, repo/community, marketing, or verification
+- public user outcome
+- allowed files
+- explicit acceptance criteria
+- verification commands
+- whether the task affects Free GitHub, Pro SaaS, Team, or future/backlog
+
+### Commit-message guidance for build-in-public
+
+Commit messages should be understandable to outside readers. Prefer:
+
+- `docs: define v1.2.0-beta launch gate`
+- `dashboard: contain sources pane without clipping`
+- `onboarding: add self-hosted quickstart`
+- `gpt: document Custom GPT setup flow`
+- `repo: add issue templates for beta feedback`
+
+Avoid vague messages such as `fix stuff`, `updates`, `misc`, or `wip` on public-facing branches.
+
 ## v1.2 dashboard design implementation guidance
 
-The first v1.2 feature is the BuildFlow dashboard design.
+The first v1.2 product surface is the BuildFlow dashboard design.
 
 Before implementation, reasoning should define the dashboard design brief and Haiku/Codex tasks should only execute narrow, file-scoped UI changes.
 
