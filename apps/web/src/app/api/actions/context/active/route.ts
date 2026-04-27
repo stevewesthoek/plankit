@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   const auth = checkActionAuth(request)
   if (!auth.valid) return auth.error
   try {
-    const data = await getBuildFlowActiveContext()
+    const data = await getBuildFlowActiveContext(auth.bearerToken)
     return NextResponse.json(data)
   } catch (err) {
     const { error, status } = unwrapActionError(err, 'context active error')
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   if (!auth.valid) return auth.error
   try {
     const body = await request.json()
-    const data = await setBuildFlowActiveContext(body)
+    const data = await setBuildFlowActiveContext(body, auth.bearerToken)
     return NextResponse.json(data)
   } catch (err) {
     const { error, status } = unwrapActionError(err, 'context active error')
