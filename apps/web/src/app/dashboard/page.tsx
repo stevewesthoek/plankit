@@ -20,6 +20,7 @@ export default function Dashboard() {
   const [sources, setSources] = useState<KnowledgeSource[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark')
   const [agentConnected, setAgentConnected] = useState(false)
   const [sourcePath, setSourcePath] = useState('')
   const [sourceLabel, setSourceLabel] = useState('')
@@ -35,6 +36,7 @@ export default function Dashboard() {
 
   const knowledgeSourcesRef = useRef<HTMLDivElement>(null)
   const addSourceFormRef = useRef<HTMLFormElement>(null)
+  const themeInitializedRef = useRef(false)
 
   const codexPrompt = `Review the current BuildFlow dashboard implementation.
 Check DESIGN.md for design system principles.
@@ -129,6 +131,22 @@ Keep all services healthy on ports 3052, 3053, 3054.`
   useEffect(() => {
     fetchSources()
   }, [])
+
+  useEffect(() => {
+    const storedTheme = window.localStorage.getItem('buildflow-dashboard-theme')
+    const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    setTheme(storedTheme === 'light' || storedTheme === 'dark' ? storedTheme : preferredTheme)
+    themeInitializedRef.current = true
+  }, [])
+
+  useEffect(() => {
+    if (!themeInitializedRef.current) return
+    window.localStorage.setItem('buildflow-dashboard-theme', theme)
+  }, [theme])
+
+  const handleToggleTheme = () => {
+    setTheme(current => (current === 'dark' ? 'light' : 'dark'))
+  }
 
   const mutateSources = async (url: string, payload: Record<string, unknown>) => {
     setMutationLoading(true)
@@ -250,99 +268,108 @@ Keep all services healthy on ports 3052, 3053, 3054.`
   }
 
   return (
-    <div className="h-screen overflow-hidden flex flex-col bg-slate-50 dark:bg-slate-950">
-      <DashboardTopBar agentConnected={agentConnected} mutationError={mutationError} mutationNotice={mutationNotice} error={error} />
-      <DashboardShell
-        leftRail={
-          <div className="w-80 border-r border-slate-200 bg-slate-50 overflow-y-auto dark:border-slate-800 dark:bg-slate-950">
-            <div className="p-6 space-y-8">
-              <div>
-                <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-4 dark:text-slate-400">Navigation</h2>
-                <div className="space-y-1">
-                  <div className="px-3 py-2 text-sm text-slate-700 rounded-md hover:bg-slate-100 cursor-pointer transition-colors dark:text-slate-300 dark:hover:bg-slate-900">Overview</div>
-                  <div className="px-3 py-2 text-sm text-slate-700 rounded-md hover:bg-slate-200 bg-slate-100 cursor-pointer transition-colors font-medium dark:bg-slate-900 dark:text-slate-50 dark:hover:bg-slate-800">Sources</div>
-                  <div className="px-3 py-2 text-sm text-slate-700 rounded-md hover:bg-slate-100 cursor-pointer transition-colors dark:text-slate-300 dark:hover:bg-slate-900">Settings</div>
+    <div className={theme === 'dark' ? 'dark' : ''}>
+      <div className="h-screen overflow-hidden flex flex-col bg-slate-50 dark:bg-slate-950">
+        <DashboardTopBar
+          agentConnected={agentConnected}
+          mutationError={mutationError}
+          mutationNotice={mutationNotice}
+          error={error}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+        />
+        <DashboardShell
+          leftRail={
+            <div className="w-80 border-r border-slate-200 bg-slate-50 overflow-y-auto dark:border-slate-800 dark:bg-slate-950">
+              <div className="p-6 space-y-8">
+                <div>
+                  <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-4 dark:text-slate-400">Navigation</h2>
+                  <div className="space-y-1">
+                    <div className="px-3 py-2 text-sm text-slate-700 rounded-md hover:bg-slate-100 cursor-pointer transition-colors dark:text-slate-300 dark:hover:bg-slate-900">Overview</div>
+                    <div className="px-3 py-2 text-sm text-slate-700 rounded-md hover:bg-slate-200 bg-slate-100 cursor-pointer transition-colors font-medium dark:bg-slate-900 dark:text-slate-50 dark:hover:bg-slate-800">Sources</div>
+                    <div className="px-3 py-2 text-sm text-slate-700 rounded-md hover:bg-slate-100 cursor-pointer transition-colors dark:text-slate-300 dark:hover:bg-slate-900">Settings</div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        }
-        mainContent={
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-8 space-y-8 max-w-none">
-              {error && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-6 shadow-sm">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h3 className="font-semibold text-red-900 text-sm">Unable to Load Sources</h3>
-                      <p className="text-red-700 text-sm mt-1">{error}</p>
-                      {loadErrorDetail && (
-                        <p className="text-red-600 text-xs mt-2 font-mono bg-red-100 px-2 py-1 rounded">{loadErrorDetail}</p>
-                      )}
-                      <p className="text-red-700 text-xs mt-3">
-                        Check that the BuildFlow agent is running: <code className="bg-red-100 px-1 rounded font-mono">buildflow serve</code>
-                      </p>
+          }
+          mainContent={
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-8 space-y-8 max-w-none">
+                {error && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-6 shadow-sm">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="font-semibold text-red-900 text-sm">Unable to Load Sources</h3>
+                        <p className="text-red-700 text-sm mt-1">{error}</p>
+                        {loadErrorDetail && (
+                          <p className="text-red-600 text-xs mt-2 font-mono bg-red-100 px-2 py-1 rounded">{loadErrorDetail}</p>
+                        )}
+                        <p className="text-red-700 text-xs mt-3">
+                          Check that the BuildFlow agent is running: <code className="bg-red-100 px-1 rounded font-mono">buildflow serve</code>
+                        </p>
+                      </div>
+                      <button type="button" onClick={() => fetchSources()} disabled={mutationLoading} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 shrink-0 hover:bg-red-700 transition-colors">
+                        Retry
+                      </button>
                     </div>
-                    <button type="button" onClick={() => fetchSources()} disabled={mutationLoading} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 shrink-0 hover:bg-red-700 transition-colors">
-                      Retry
-                    </button>
                   </div>
-                </div>
-              )}
-              <DashboardOverview
-                loading={loading}
-                sources={sources}
-                activeMode={activeMode}
-                writeMode={writeMode}
-                onManageSources={() => knowledgeSourcesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                onAddSource={() => addSourceFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              />
-              <PlanPlaceholderPanel sources={sources} agentConnected={agentConnected} />
-              <ExecutionFlowPreview />
-              <ExecutionHandoffPanel
-                codexPrompt={codexPrompt}
-                claudeCodePrompt={claudeCodePrompt}
-                handoffCopyStatus={handoffCopyStatus}
-                onCopyCodex={() => copyToClipboard(codexPrompt, 'codex-copied')}
-                onCopyClaude={() => copyToClipboard(claudeCodePrompt, 'claude-copied')}
-              />
-              <KnowledgeSourcesPanel
-                sources={sources}
-                loading={loading}
-                mutationLoading={mutationLoading}
-                mutationError={mutationError}
-                mutationNotice={mutationNotice}
-                sourcePath={sourcePath}
-                sourceLabel={sourceLabel}
-                sourceId={sourceId}
-                activeSourceIds={activeSourceIds}
-                onAddSourceSubmit={handleAddSource}
-                onSourcePathChange={setSourcePath}
-                onSourceLabelChange={setSourceLabel}
-                onSourceIdChange={setSourceId}
-                onToggleActiveSource={toggleActiveSource}
-                onToggleEnabled={(sourceId, nextEnabled) => mutateSources('/api/agent/sources/toggle', { sourceId, enabled: nextEnabled })}
-                onReindexSource={handleReindexSource}
-                onRemoveSource={(source) => {
-                  if (window.confirm(`Remove knowledge source "${source.label}"?`)) {
-                    mutateSources('/api/agent/sources/remove', { sourceId: source.id })
-                  }
-                }}
-                addSourceFormRef={addSourceFormRef}
-              />
-              <ActiveContextPanel activeMode={activeMode} writeMode={writeMode} activeSourceIds={activeSourceIds} onSetMode={handleSetMode} onSetWriteMode={handleWriteMode} />
-              <InfoPanels />
+                )}
+                <DashboardOverview
+                  loading={loading}
+                  sources={sources}
+                  activeMode={activeMode}
+                  writeMode={writeMode}
+                  onManageSources={() => knowledgeSourcesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  onAddSource={() => addSourceFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                />
+                <PlanPlaceholderPanel sources={sources} agentConnected={agentConnected} />
+                <ExecutionFlowPreview />
+                <ExecutionHandoffPanel
+                  codexPrompt={codexPrompt}
+                  claudeCodePrompt={claudeCodePrompt}
+                  handoffCopyStatus={handoffCopyStatus}
+                  onCopyCodex={() => copyToClipboard(codexPrompt, 'codex-copied')}
+                  onCopyClaude={() => copyToClipboard(claudeCodePrompt, 'claude-copied')}
+                />
+                <KnowledgeSourcesPanel
+                  sources={sources}
+                  loading={loading}
+                  mutationLoading={mutationLoading}
+                  mutationError={mutationError}
+                  mutationNotice={mutationNotice}
+                  sourcePath={sourcePath}
+                  sourceLabel={sourceLabel}
+                  sourceId={sourceId}
+                  activeSourceIds={activeSourceIds}
+                  onAddSourceSubmit={handleAddSource}
+                  onSourcePathChange={setSourcePath}
+                  onSourceLabelChange={setSourceLabel}
+                  onSourceIdChange={setSourceId}
+                  onToggleActiveSource={toggleActiveSource}
+                  onToggleEnabled={(sourceId, nextEnabled) => mutateSources('/api/agent/sources/toggle', { sourceId, enabled: nextEnabled })}
+                  onReindexSource={handleReindexSource}
+                  onRemoveSource={(source) => {
+                    if (window.confirm(`Remove knowledge source "${source.label}"?`)) {
+                      mutateSources('/api/agent/sources/remove', { sourceId: source.id })
+                    }
+                  }}
+                  addSourceFormRef={addSourceFormRef}
+                />
+                <ActiveContextPanel activeMode={activeMode} writeMode={writeMode} activeSourceIds={activeSourceIds} onSetMode={handleSetMode} onSetWriteMode={handleWriteMode} />
+                <InfoPanels />
+              </div>
             </div>
-          </div>
-        }
-        rightPanel={
-          <InsightPanel
-            loading={loading}
-            error={error}
-            sourceCount={sources.length}
-          />
-        }
-      />
+          }
+          rightPanel={
+            <InsightPanel
+              loading={loading}
+              error={error}
+              sourceCount={sources.length}
+            />
+          }
+        />
+      </div>
     </div>
   )
 }
