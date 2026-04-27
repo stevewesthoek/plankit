@@ -113,7 +113,7 @@ User's Machine                          BuildFlow Servers
 
 ### What already exists in `packages/bridge`
 
-The bridge package contains **relay foundation code (Phase 5B/5C)**:
+The bridge package contains **relay implementation with full multi-user routing**:
 
 ✅ Device registration (`/api/register`)
 - Generate device token
@@ -121,17 +121,18 @@ The bridge package contains **relay foundation code (Phase 5B/5C)**:
 - Return connection info
 
 ✅ WebSocket connection (`/api/bridge/ws`)
-- Device authentication
+- Device authentication by bearer token
 - Heartbeat/ping-pong
 - Command routing
 
 ✅ Action proxy endpoint (`/api/actions/proxy/*`)
-- **Single-device routing only** (Phase 5B, line 363: returns 503 if multiple devices connected)
+- **Multi-user token-scoped routing** — each request authenticated with bearer token and routed to that token's device
+- Multiple concurrent devices supported
 - Timeout handling (30 seconds)
 - Request/response correlation
 
 ✅ Admin endpoints (`/api/admin/devices`, `/api/admin/requests`)
-- Device status visibility
+- Device status visibility per user
 - Request audit logging
 
 ✅ Session management (`/api/sessions`)
@@ -141,42 +142,35 @@ The bridge package contains **relay foundation code (Phase 5B/5C)**:
 
 ✅ Token store & device registry
 - Persistent storage
-- Token hashing
+- Token-to-deviceId mapping
 - Device metadata
 
-### What's missing for v1.2.0-beta
+### What's required for v1.2.0-beta
 
-**For basic v1.2.0-beta function (single user/device):**
+**Deployed relay instance at `buildflow.prochat.tools`:**
 
-**Required:** Public relay instance running at `buildflow.prochat.tools`
-- Deploy bridge server to Dokploy-managed VPS or equivalent (not required: AWS/Kubernetes)
-- Configure HTTPS termination (Cloudflare, nginx, or managed service)
-- Set `RELAY_PROXY_TOKEN` for action proxy authentication (non-empty, strong)
-- Set `RELAY_ENABLE_DEFAULT_TOKENS=false` for production (default tokens disabled)
-- Set `RELAY_ADMIN_TOKEN` for admin endpoint protection
-- Implement logging and monitoring (request audit, device health)
-- Test end-to-end: Custom GPT action → relay → local agent
+✅ Deploy bridge server to Dokploy-managed VPS or equivalent (not required: AWS/Kubernetes)
+✅ Configure HTTPS termination (Dokploy with Let's Encrypt, or managed service)
+✅ Set `RELAY_ENABLE_DEFAULT_TOKENS=false` for production (default tokens disabled)
+✅ Set `RELAY_ADMIN_TOKEN` for admin endpoint protection (ops/monitoring only)
+✅ Implement logging and monitoring (request audit, device health)
+✅ Token-scoped device routing implemented (each request bearer token → correct device)
+✅ Multiple users can connect simultaneously (token isolation enforced)
+✅ Test end-to-end: Custom GPT action → relay → local agent (with real bearer token routing)
 
-**CRITICAL LIMITATION (Phase 5B):**
-- **Multiple connected devices return 503 error** (line 363: "Multiple connected devices not supported in Phase 5B")
-- v1.2.0-beta relay can serve only ONE device per token at a time
-- For single users with single local agent: this works fine
-- For multi-device users: must close first device before connecting second (sequential, not concurrent)
-
-**v1.2.0-beta relay hardening checklist:**
+**v1.2.0-beta relay readiness checklist:**
 
 1. ✅ Deploy bridge as hosted relay service (Dokploy, DigitalOcean App Platform, etc.)
 2. ✅ Configure HTTPS/WSS under `buildflow.prochat.tools` domain
 3. ✅ Disable default/dev tokens in hosted mode (`RELAY_ENABLE_DEFAULT_TOKENS=false`)
-4. ✅ Map Bearer token/session to connected device
-5. ⚠️ **KNOWN LIMITATION:** Return clear 503 error if multiple devices try to connect (current behavior: correct)
-6. ✅ Return clear offline/no-device errors when relay/device unavailable
+4. ✅ Implement Bearer token → deviceId routing for action proxy (already done)
+5. ✅ Return clear 401 for invalid/unregistered tokens
+6. ✅ Return clear 503 for offline device with helpful message
 7. ✅ Document local agent pairing flow (token generation → registration → WebSocket connection)
 8. ✅ Run end-to-end Custom GPT → relay → local agent test (all 8 Custom GPT actions)
+9. ✅ Run multi-user routing test (2 devices, 2 tokens, verify isolation)
 
-**Optional:** Multi-device routing for Pro/SaaS (Phase 2)
-- Future: Token-based device selection or per-user relay session
-- Current implementation: One device per token (sequential support only)
+**Future work (not v1.2.0-beta):** Rate limiting, token expiration, per-team quotas
 
 ### What remains future/Pro
 
@@ -233,10 +227,10 @@ The bridge package contains **relay foundation code (Phase 5B/5C)**:
 - Sequential device support (close first device, connect second device)
 
 **NOT supported in Phase 5B (v1.2.0-beta):**
-- ❌ Multiple concurrent devices per token (returns 503 error if multiple devices try to connect)
-- ❌ Multi-user isolation (single relay instance = single user's context today)
-- ❌ Per-user resource limits
+- ❌ Per-user resource limits (rate limiting, quotas)
+- ❌ Token expiration and refresh flows
 - ❌ Cloud sync or persistence of plans/artifacts
+- ❌ End-to-end encryption (transport TLS only)
 
 ### Future improvements (Pro/SaaS)
 

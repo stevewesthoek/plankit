@@ -69,10 +69,9 @@ NODE_ENV=production
 BRIDGE_PORT=3053
 RELAY_DATA_DIR=/relay-data
 
-# Authentication (Phase 5B hardening for v1.2.0-beta)
+# Authentication (security hardening for v1.2.0-beta)
 RELAY_ENABLE_DEFAULT_TOKENS=false
-RELAY_ADMIN_TOKEN=<secret-32-char-hex>       # For /api/admin/* endpoints
-RELAY_PROXY_TOKEN=<secret-32-char-hex>       # For /api/actions/proxy/* endpoints
+RELAY_ADMIN_TOKEN=<secret-32-char-hex>       # For /api/admin/* endpoints (ops/monitoring only)
 
 # Example token generation (run locally, paste into Dokploy secrets UI):
 # openssl rand -hex 16  # Generates 32 hex chars
@@ -80,18 +79,15 @@ RELAY_PROXY_TOKEN=<secret-32-char-hex>       # For /api/actions/proxy/* endpoint
 
 **Token generation for Dokploy secrets:**
 ```bash
-# Generate RELAY_ADMIN_TOKEN (secure random)
+# Generate RELAY_ADMIN_TOKEN (secure random, for ops/admin endpoints only)
 RELAY_ADMIN_TOKEN=$(openssl rand -hex 16)
 echo "RELAY_ADMIN_TOKEN=$RELAY_ADMIN_TOKEN"
 
-# Generate RELAY_PROXY_TOKEN (secure random, different from admin token)
-RELAY_PROXY_TOKEN=$(openssl rand -hex 16)
-echo "RELAY_PROXY_TOKEN=$RELAY_PROXY_TOKEN"
-
-# Store both in Dokploy secrets panel:
+# Store in Dokploy secrets panel:
 # 1. Create secret named: RELAY_ADMIN_TOKEN → <value>
-# 2. Create secret named: RELAY_PROXY_TOKEN → <value>
 ```
+
+**Note:** `RELAY_PROXY_TOKEN` is no longer needed for user-facing action routing. Each user's device is identified by their own bearer token (the same token they use to authenticate with the local BuildFlow instance). This ensures request isolation and prevents the relay from accidentally routing one user's request to another user's device.
 
 ### Persistent Volume
 
@@ -240,54 +236,42 @@ pnpm local:restart
 
 ---
 
-## Critical Limitation: Single Connected Device (Phase 5B)
+## Multi-User Device Routing
 
 ### Current Behavior
 
-The relay **does not support multiple local agents** connected simultaneously in Phase 5B.
+The relay supports multiple local agents connected simultaneously and routes Custom GPT actions to the correct device based on each user's bearer token.
 
-**If a second device connects while one is active:**
+**When multiple devices are connected:**
 ```
 GET /health
 {
   "connectedDevices": 2,
   "devices": [
-    { "id": "device-1", "status": "online" },
-    { "id": "device-2", "status": "online" }
+    { "id": "device-user-a", "status": "online", "lastHeartbeat": "..." },
+    { "id": "device-user-b", "status": "online", "lastHeartbeat": "..." }
   ]
 }
 
 POST /api/actions/proxy/api/search
-Response: 503
-{
-  "error": "Multiple connected devices not supported in Phase 5B. Use direct-agent mode for local-only execution."
-}
+Authorization: Bearer <user-a-token>
+Response: 200 ✓ (routed to device-user-a)
+
+POST /api/actions/proxy/api/search
+Authorization: Bearer <user-b-token>
+Response: 200 ✓ (routed to device-user-b)
 ```
 
-**Code reference:** `packages/bridge/src/server.ts:360–373`
+**Code reference:** `packages/bridge/src/server.ts` — `authenticateUserDevice()` function authenticates each request with the bearer token and looks up the associated device.
 
-### Phase 5B Workaround
+### How Token-Based Routing Works
 
-**For v1.2.0-beta:** Users must operate in one of two modes:
+1. User registers their token: `POST /api/register { deviceToken: "...", deviceId?: "..." }` → relay maps token → deviceId
+2. User's local agent connects: WebSocket auth with same `deviceToken` → relay receives `auth_response` with assigned `deviceId`
+3. Custom GPT sends action: `POST /api/actions/proxy/api/search Authorization: Bearer <token>` → relay calls `tokenStore.validateToken(token)` → gets `deviceId` → sends command to that device's WebSocket
+4. Device responds via WebSocket → relay routes result back to Custom GPT
 
-1. **Sequential mode** (recommended for beta)
-   - User 1 runs agent locally with relay enabled
-   - User 2 waits until User 1 closes their agent
-   - User 2 then starts their agent and connects
-
-2. **Local-only mode** (if relay not needed temporarily)
-   - Set `BUILDFLOW_BACKEND_MODE=direct-agent`
-   - Skip relay connection entirely
-   - No Custom GPT routing, but local dashboard still works
-
-### When Multi-Device Support Arrives
-
-Phase 5C (v1.2.1 or later) will add:
-- Per-device token mapping (relay knows which device owns which token)
-- Per-device action routing (relay sends requests to specific device)
-- Concurrent multi-device support
-
-**For v1.2.0-beta:** This is documented as a known limitation, not a bug.
+Each user/token combination is completely isolated. No cross-contamination of requests.
 
 ---
 
@@ -307,15 +291,15 @@ Public endpoints (no auth required for registration):
 Device registration (beta, unauthenticated):
   POST https://buildflow.prochat.tools/api/register
 
-WebSocket (bearer token required):
+WebSocket (bearer token required, token is user's device token):
   wss://buildflow.prochat.tools/api/bridge/ws
-  Authorization: Bearer <BUILDFLOW_ACTION_TOKEN>
+  Authorization: Bearer <user-device-token>
 
-Action proxy (RELAY_PROXY_TOKEN required, used by CustomGPT):
+Action proxy (bearer token required, routes to device for that token):
   POST https://buildflow.prochat.tools/api/actions/proxy/api/search
   POST https://buildflow.prochat.tools/api/actions/proxy/api/read
   POST https://buildflow.prochat.tools/api/actions/proxy/api/write
-  Authorization: Bearer <RELAY_PROXY_TOKEN>
+  Authorization: Bearer <user-device-token>
 
 Admin (RELAY_ADMIN_TOKEN required, ops/monitoring):
   GET https://buildflow.prochat.tools/api/admin/devices
@@ -346,7 +330,7 @@ Before marking v1.2.0-beta relay ready, complete these tests:
 
 - [ ] Service is created and building from main branch
 - [ ] Environment variables set: `NODE_ENV=production`, `RELAY_ENABLE_DEFAULT_TOKENS=false`
-- [ ] Secrets configured: `RELAY_ADMIN_TOKEN`, `RELAY_PROXY_TOKEN` (32-char hex each)
+- [ ] Secrets configured: `RELAY_ADMIN_TOKEN` (32-char hex)
 - [ ] Persistent volume `/relay-data` is mounted and writable
 - [ ] Health check endpoint: `GET /health` returns 200 OK
 - [ ] Readiness check endpoint: `GET /ready` returns 200 OK
@@ -363,37 +347,38 @@ Before marking v1.2.0-beta relay ready, complete these tests:
 - [ ] Verify connection: `curl -s https://buildflow.prochat.tools/health | jq '.connectedDevices'`
 - [ ] Should show: `1` (one device connected)
 
-### Custom GPT Action Proxy Test (requires RELAY_PROXY_TOKEN)
+### Custom GPT Action Proxy Test (per-device token routing)
 
-- [ ] Test search action:
+- [ ] Test search action with user token:
   ```bash
   curl -s -X POST https://buildflow.prochat.tools/api/actions/proxy/api/search \
-    -H 'Authorization: Bearer <RELAY_PROXY_TOKEN>' \
+    -H 'Authorization: Bearer <user-device-token>' \
     -H 'Content-Type: application/json' \
     -d '{"query":"test","limit":2}' | jq .
   ```
-- [ ] Should return search results from connected agent (200 OK)
-- [ ] Without valid token: should return 403 Forbidden
+- [ ] Should return search results from that user's device (200 OK)
+- [ ] With invalid/unregistered token: should return 401 Unauthorized
 
 - [ ] Test read action:
   ```bash
   curl -s -X POST https://buildflow.prochat.tools/api/actions/proxy/api/read \
-    -H 'Authorization: Bearer <RELAY_PROXY_TOKEN>' \
+    -H 'Authorization: Bearer <user-device-token>' \
     -H 'Content-Type: application/json' \
     -d '{"path":"README.md"}' | jq .
   ```
-- [ ] Should return file content or error from agent (200 OK or 400+ if file not found)
+- [ ] Should return file content or error from that user's device (200 OK or 400+ if file not found)
 
-### Multi-Device Limitation Test
+### Multi-User Routing Test
 
-- [ ] Start second test machine with its own agent, different token
+- [ ] Start second test machine with its own agent and different token
 - [ ] First agent still connected
 - [ ] Run: `curl -s https://buildflow.prochat.tools/health | jq '.connectedDevices'`
-- [ ] Should show: `2` (two devices connected)
-- [ ] Run action proxy test: `curl -X POST https://buildflow.prochat.tools/api/actions/proxy/api/search ...`
-- [ ] Should return 503: `"Multiple connected devices not supported in Phase 5B"`
-- [ ] Stop first agent (disconnect)
-- [ ] Run action proxy again: should return 200 OK (second device now handles it)
+- [ ] Should show: `2` (two devices connected simultaneously)
+- [ ] Run action proxy test with User A's token: should route to User A's device
+- [ ] Run action proxy test with User B's token: should route to User B's device
+- [ ] Stop User A's agent (disconnect)
+- [ ] Run action proxy with User A's token: should return 503 "device not connected"
+- [ ] Run action proxy with User B's token: should still work (routes to User B)
 
 ### Audit & Monitoring
 
@@ -573,15 +558,14 @@ kill %1
 
 ## Troubleshooting
 
-### "Multiple connected devices not supported in Phase 5B"
+### "Your device is not connected to the relay"
 
 **Symptom:** Action proxy returns 503 error  
-**Cause:** Two or more agents are connected simultaneously  
+**Cause:** Device registered with token is offline/disconnected, or token not registered  
 **Solution:**
-- User 1: Disconnect agent (stop local BuildFlow)
-- Wait 10 seconds for relay heartbeat timeout
-- User 2: Connect their agent
-- Verify: `curl https://buildflow.prochat.tools/health` shows `connectedDevices: 1`
+- Verify token is registered: `curl -s -H "Authorization: Bearer <token>" https://buildflow.prochat.tools/api/actions/proxy/api/status`
+- If 401: token not registered or invalid
+- If 503: token registered but device offline — start your local BuildFlow with relay mode: `BUILDFLOW_BACKEND_MODE=relay-agent pnpm local:restart`
 
 ### "No connected device available"
 
@@ -612,17 +596,48 @@ kill %1
 
 ---
 
+## Privacy and Security Model
+
+### What traverses the relay
+
+Payloads (search queries, file content results, write operations) transit through the relay's in-memory HTTP/WebSocket proxying as part of normal request handling. They are **not persisted** to disk, audit logs, or any external system.
+
+**During transmission, the relay operator has technical access to in-memory traffic.** BuildFlow does not offer end-to-end encryption in v1.2.0-beta — only transport-level TLS (HTTPS/WSS) protects payloads in transit.
+
+### What stays local
+
+- Your file storage and index (on your machine only)
+- Source content scanning and processing
+- Artifact generation and plan creation
+- Local agent execution and environment detection
+
+### What's logged
+
+Audit logs contain only **metadata**, never payloads:
+- `requestId`: unique request identifier
+- `deviceId`: device/user identifier (internal, not a secret)
+- `command`: action name (e.g., `action_proxy:search`)
+- `status`: outcome (success/error/timeout)
+- `duration`: execution time in milliseconds
+- `timestamp`: RFC 3339 timestamp
+- `error`: error category (e.g., "invalid_token", "device_offline"), not the full error message or stack trace
+
+**Never logged:** bearer tokens, file contents, search queries, response bodies, or any user payload data.
+
+---
+
 ## Version and Compatibility
 
 **Bridge version for v1.2.0-beta:** `@buildflow/bridge@0.1.0`
 
 **Node.js requirement:** 20.x LTS or later (type checking requires TypeScript 5.0+)
 
-**Relay protocol version:** Phase 5B (supports single connected device)
+**Relay protocol version:** Phase 5C (supports multi-user token-scoped routing)
 
 **Breaking changes from Phase 5A:**
-- Explicit `RELAY_PROXY_TOKEN` required for action proxy (added security layer)
+- User-device routing by bearer token (each device isolated to its registered token)
 - Explicit admin token configuration (no unauthenticated `/api/admin/*` in production)
+- No multi-device 503 error — multiple users can connect simultaneously
 
 ---
 
@@ -631,21 +646,18 @@ kill %1
 1. **Monitor relay usage and request patterns**
    - Are users connecting successfully?
    - How many concurrent Custom GPT actions?
-   - Any 503 errors due to multi-device attempts?
+   - Any routing errors or token mismatches?
 
-2. **Gather feedback on single-device limitation**
-   - Do users need multi-device support during beta?
-   - How many users are affected?
+2. **Gather feedback on multi-user routing**
+   - Is token-scoped routing working as expected?
+   - Any interference between simultaneous users?
+   - Performance impact of multiple concurrent devices?
 
-3. **Plan Phase 5C (multi-device support)**
-   - Per-device token mapping
-   - Concurrent device coordination
-   - Removal of 503 multi-device error
-
-4. **Plan Phase 2 (Pro SaaS relay)**
+3. **Plan Phase 2 (Pro SaaS relay)**
    - Hosted relay instances for Pro users
    - Team workspace routing
    - Advanced device management
+   - Request rate limiting and quotas
 
 ---
 

@@ -49,7 +49,7 @@ The user should be able to:
   - Still supported and documented
   - Optional, not required
 
-- **Relay infrastructure:** Already exists in `packages/bridge` (production-ready)
+- **Relay infrastructure:** Already implemented in `packages/bridge` with multi-user token-scoped routing
   - Device registration, WebSocket routing, action proxy, request audit
   - Just needs to be deployed to public instance + documented
 

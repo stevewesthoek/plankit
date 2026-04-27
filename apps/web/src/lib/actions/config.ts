@@ -10,7 +10,9 @@ export function getBackendMode(): BackendMode {
 }
 
 export function getRelayProxyToken(): string | null {
-  return process.env.RELAY_PROXY_TOKEN || null
+  // When calling the relay in relay-agent mode, identify this instance
+  // with the user-facing action token (which maps to the registered device)
+  return process.env.BUILDFLOW_ACTION_TOKEN || null
 }
 
 export function getBackendUrl(): string {

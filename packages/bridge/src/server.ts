@@ -51,6 +51,37 @@ function requireAdminAuth(req: http.IncomingMessage, res: http.ServerResponse): 
   return true
 }
 
+function authenticateUserDevice(req: http.IncomingMessage, res: http.ServerResponse): string | null {
+  const authHeader = req.headers.authorization
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.writeHead(401)
+    res.end(JSON.stringify({ error: 'Authorization header required' }))
+    logToFile({
+      timestamp: new Date().toISOString(),
+      tool: 'relay_action_proxy',
+      status: 'error',
+      reason: 'missing_auth'
+    })
+    return null
+  }
+
+  const token = authHeader.slice(7)
+  const deviceId = tokenStore.validateToken(token)
+  if (!deviceId) {
+    res.writeHead(401)
+    res.end(JSON.stringify({ error: 'Invalid or unregistered bearer token' }))
+    logToFile({
+      timestamp: new Date().toISOString(),
+      tool: 'relay_action_proxy',
+      status: 'error',
+      reason: 'invalid_token'
+    })
+    return null
+  }
+
+  return deviceId
+}
+
 function requireProxyAuth(req: http.IncomingMessage, res: http.ServerResponse): boolean {
   if (!runtimeConfig?.config.relayProxyToken) {
     // No proxy token set, allow access (dev mode)
@@ -306,10 +337,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Action proxy endpoint: relay-backed execution for ChatGPT actions
-  // Phase 5C: Added explicit authentication with RELAY_PROXY_TOKEN
-  // (Separate from RELAY_ADMIN_TOKEN for security separation)
+  // Routes to device associated with the requesting user's bearer token
   if (req.method === 'POST' && req.url?.startsWith('/api/actions/proxy/')) {
-    if (!requireProxyAuth(req, res)) return
+    // Authenticate user device via bearer token
+    const requestDeviceId = authenticateUserDevice(req, res)
+    if (!requestDeviceId) return
 
     let body = ''
     req.on('data', chunk => { body += chunk.toString() })
@@ -339,40 +371,24 @@ const server = http.createServer(async (req, res) => {
         }
         const relayCommand = `action_proxy:${commandMatch[1]}`
 
-        // Find single connected device
-        const connectedDevices = Array.from(devices.values()).filter(d => d.ws.readyState === WebSocket.OPEN)
+        // Find the device for this user
+        const device = devices.get(requestDeviceId)
 
-        if (connectedDevices.length === 0) {
+        if (!device || device.ws.readyState !== WebSocket.OPEN) {
           res.writeHead(503)
           res.end(JSON.stringify({
-            error: 'No connected device available. Relay-backed execution requires at least one device connected to relay on port 3053.'
+            error: 'Your device is not connected to the relay. Start your local BuildFlow agent with relay mode enabled.'
           }))
           logToFile({
             timestamp: new Date().toISOString(),
             tool: 'relay_action_proxy',
             status: 'error',
-            reason: 'no_connected_device',
+            reason: 'device_offline',
+            deviceId: requestDeviceId,
             endpoint: agentEndpoint
           })
           return
         }
-
-        if (connectedDevices.length > 1) {
-          res.writeHead(503)
-          res.end(JSON.stringify({
-            error: 'Multiple connected devices not supported in Phase 5B. Use direct-agent mode for local-only execution.'
-          }))
-          logToFile({
-            timestamp: new Date().toISOString(),
-            tool: 'relay_action_proxy',
-            status: 'error',
-            reason: 'multiple_devices',
-            endpoint: agentEndpoint
-          })
-          return
-        }
-
-        const device = connectedDevices[0]
 
         // Validate request body
         let params: any
