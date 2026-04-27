@@ -387,7 +387,7 @@ Keep all services healthy on ports 3052, 3053, 3054.`
               )}
 
               {activeDashboardSection === 'handoff' && (
-                <div className="flex-1 overflow-hidden p-6 flex flex-col">
+                <div className="flex-1 overflow-hidden p-6 flex flex-col min-h-0">
                   <ExecutionHandoffPanel
                     codexPrompt={codexPrompt}
                     claudeCodePrompt={claudeCodePrompt}

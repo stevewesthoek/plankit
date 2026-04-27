@@ -1,7 +1,7 @@
 export function InfoPanels() {
   return (
     <>
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 shadow-sm dark:border-blue-950/50 dark:bg-blue-950/20">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 dark:border-blue-950/50 dark:bg-blue-950/20">
         <h2 className="text-base font-semibold text-blue-900 mb-2 dark:text-blue-200">Execution Modes</h2>
         <p className="text-blue-800 text-sm dark:text-blue-100">BuildFlow supports two execution modes for ChatGPT Actions:</p>
         <ul className="text-blue-800 text-xs space-y-1 mt-3 ml-4 dark:text-blue-100">
@@ -13,7 +13,7 @@ export function InfoPanels() {
         </p>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+      <div className="bg-white rounded-lg border border-slate-200 p-6 dark:border-slate-800 dark:bg-slate-900/70">
         <h2 className="text-base font-semibold text-slate-900 mb-4 dark:text-slate-50">Getting Started</h2>
         <div className="space-y-5">
           <div>

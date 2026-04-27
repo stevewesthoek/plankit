@@ -49,7 +49,7 @@ export function KnowledgeSourcesPanel({
   addSourceFormRef
 }: KnowledgeSourcesPanelProps) {
   return (
-    <div className="flex flex-col h-full p-6">
+    <div className="flex flex-col p-6">
       <div className="shrink-0 pb-6">
         <h2 className="text-base font-semibold text-slate-900 mb-1 dark:text-slate-50">Knowledge Sources</h2>
         <p className="text-slate-600 text-sm dark:text-slate-300">Configured knowledge sources that are searched and read together through ChatGPT.</p>
