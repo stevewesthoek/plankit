@@ -17,9 +17,9 @@ This directory is the canonical documentation path for BuildFlow planning, relea
 
 - [Launch strategy](./launch-strategy.md)
 - [v1.2.0-beta release gate](./beta-release-gate.md)
-- [Custom GPT connection architecture](./custom-gpt-connection-architecture.md) — Architecture decision for managed relay
-- [Custom GPT endpoint model and self-hosting setup](./custom-gpt-self-hosting-model.md) — User setup guide
-- [Dokploy relay deployment plan](./dokploy-relay-deployment-plan.md) — Infrastructure guide for v1.2.0-beta relay
+- [Custom GPT connection architecture](./custom-gpt-connection-architecture.md) — Architecture decision for Local vs Managed modes
+- [Custom GPT endpoint model and self-hosting setup](./custom-gpt-self-hosting-model.md) — User setup guide for local and managed paths
+- [Dokploy relay deployment plan](./dokploy-relay-deployment-plan.md) — Managed relay infrastructure guide
 - [Dashboard design brief](./dashboard-design-brief.md)
 
 ## Source of truth hierarchy
@@ -31,6 +31,12 @@ Use this order when resolving conflicts or deciding which document is canonical:
 3. [`docs/product/implementation-plan.md`](./implementation-plan.md) defines execution method.
 4. Root [`README.md`](../../README.md) defines public product positioning.
 5. Older phase, MVP, transition, and board docs are historical/reference unless explicitly linked as canonical.
+
+### Product mode guidance
+
+- **BuildFlow Local** docs should be read as the default free GitHub self-hosted product.
+- **BuildFlow Managed** docs should be read as the future paid managed relay / SaaS path.
+- If a doc does not clearly say which mode it applies to, prefer the interpretation that keeps the free GitHub product truly self-hosted.
 
 ## Historical/reference docs
 

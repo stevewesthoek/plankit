@@ -2,6 +2,8 @@
 
 **Status:** ✅ Complete. Ready for Dokploy deployment.
 
+**Migration status correction:** This historical report means the token-passthrough implementation was considered ready for Dokploy planning/testing. It does not mean `buildflow.prochat.tools` is already on Dokploy or that production cutover is approved. Current sequence: `buildflow.prochat.tools` remains Steve's local BuildFlow endpoint; `buildflow-staging.prochat.tools` is used for Dokploy staging; `buildflow.prochat.tools` may switch to Dokploy only after Steve explicitly approves Phase 4; local cleanup may happen only after Steve explicitly approves Phase 5.
+
 **Commit:** `27b93c1` — "fix: Implement request-token passthrough for relay-agent mode"
 
 ---

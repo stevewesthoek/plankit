@@ -20,6 +20,23 @@ BuildFlow is a local-first, open-source planning and handoff layer for AI-native
 
 BuildFlow v1.0 is the stable Custom GPT Actions baseline.
 
+### Product modes
+
+BuildFlow now has two product modes:
+
+1. **BuildFlow Local** - the free GitHub version. It is fully self-hosted and runs on the user's own machine.
+2. **BuildFlow Managed** - the paid/future SaaS path. It uses BuildFlow-operated managed relay infrastructure.
+
+BuildFlow Local is the default for free GitHub users. It should be documented as a true self-hosted setup: the user owns the local agent, web app, relay, and any endpoint, tunnel, or domain they choose to expose.
+
+BuildFlow Managed is the convenience path for managed relay and hosted workflows. Dokploy staging exists for validating that managed path, but it is not a universal replacement for local/self-hosted BuildFlow.
+
+Do not change, stop, clean up, or reconfigure Steve's local BuildFlow runtime during managed relay work. Steve's current local configuration remains protected and should not be cleaned up unless an explicit later decision says so.
+
+`apps/web/.env.local` and Steve's current local `BUILDFLOW_ACTION_TOKEN` are protected local configuration. Do not edit, reuse, regenerate, replace, or copy the local token into Dokploy.
+
+The managed staging URL `https://buildflow-staging.prochat.tools` is used to validate BuildFlow Managed. The public `https://buildflow.prochat.tools` endpoint should be described as part of the managed path, not as the default replacement for BuildFlow Local.
+
 For canonical documentation, roadmap context, and implementation guidance, see [`docs/product/README.md`](docs/product/README.md).
 
 Why BuildFlow?
@@ -221,6 +238,7 @@ For now, source setup is managed in the current local flow. The BuildFlow UX bui
 
 1. Create a new Custom GPT in ChatGPT
 2. Import the combined OpenAPI schema from `https://buildflow.prochat.tools/api/openapi`
+   - **Migration note:** today this URL is Steve's local BuildFlow endpoint. During Dokploy staging tests, use `https://buildflow-staging.prochat.tools/api/openapi` for the staging Custom GPT. Do not switch the production Custom GPT back to `buildflow.prochat.tools` until Steve explicitly approves Phase 4.
 3. Set authentication to Bearer token, using your `BUILDFLOW_ACTION_TOKEN`
 4. Test with a simple prompt like:
     * “Search my local project context for notes about pricing”

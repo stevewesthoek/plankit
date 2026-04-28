@@ -4,16 +4,16 @@ This roadmap is conservative and documents the current planning direction withou
 
 ## Version targets
 
-BuildFlow is now building toward a public Free GitHub beta before any hosted SaaS or Team work.
+BuildFlow is now building toward a public Free GitHub beta for BuildFlow Local while separately validating BuildFlow Managed as the future paid convenience path.
 
 | Version | Audience | Status meaning | Primary outcome |
 | --- | --- | --- | --- |
 | v1.0 | internal/public action baseline | stable Custom GPT Actions baseline | verified GPT action surface and write contract |
 | v1.1 | maintainers/contributors | documentation and planning foundation | canonical docs, task format, verification discipline |
-| v1.2.0-beta | Free GitHub public beta | marketable local-first beta | a new user can clone, run, connect sources, use the dashboard, connect the Custom GPT, and complete the local planning-to-handoff loop |
-| v1.2.0 | Free GitHub stable | polished self-hosted release | beta feedback resolved, docs complete, onboarding robust, release note published |
+| v1.2.0-beta | BuildFlow Local public beta | marketable local-first beta | a new user can clone, run, connect sources, use the dashboard, connect the Custom GPT, and complete the local planning-to-handoff loop |
+| v1.2.0 | BuildFlow Local stable | polished self-hosted release | beta feedback resolved, docs complete, onboarding robust, release note published |
 | v1.3 | Free GitHub plus future Pro-ready improvements | post-beta product expansion | command bar, deeper dashboard flows, richer packet/plan UX where validated |
-| Pro SaaS | paid hosted users | later commercial product | hosted onboarding, accounts, history, direct/managed execution convenience |
+| BuildFlow Managed | paid hosted users | later commercial product | hosted onboarding, accounts, history, direct/managed execution convenience |
 | Team | teams/organizations | later collaboration product | shared workspaces, roles, review, team history |
 
 ## BuildFlow v1.0
@@ -46,13 +46,13 @@ Emphasis:
 - no removal of historical docs
 - no broad architecture changes
 
-## BuildFlow v1.2.0-beta — Free GitHub public beta
+## BuildFlow v1.2.0-beta — BuildFlow Local public beta
 
 This is the current build target and the highest priority.
 
 Goal:
 
-- ship a marketable, self-hosted, local-first BuildFlow beta on GitHub
+- ship a marketable, self-hosted, local-first BuildFlow Local beta on GitHub
 - make the repo credible enough to share publicly on GitHub, X, Facebook, and related founder/developer communities
 - prove the core promise: **Think in ChatGPT. Build anywhere.**
 
@@ -101,7 +101,7 @@ A v1.2.0-beta user should be able to:
 - local stack explanation: agent 3052, relay 3053, web 3054
 - environment/token setup instructions
 - Custom GPT setup guide and GPT Store/custom GPT link once available
-- explanation of `buildflow.prochat.tools` versus local/self-hosted URLs
+- explanation of BuildFlow Local versus BuildFlow Managed URLs
 - troubleshooting guide for auth 401, tunnel 502, stale Next cache, indexing issues, port conflicts, and local service health
 - maintainer commands: start, stop, restart, rebuild web, verify
 - documentation for what data stays local and what ChatGPT receives
@@ -134,7 +134,7 @@ Before v1.2.0-beta is described as ready, verify:
 
 See [`docs/product/beta-release-gate.md`](./beta-release-gate.md) for the working checklist.
 
-## BuildFlow v1.2.0 — Free GitHub stable
+## BuildFlow v1.2.0 — BuildFlow Local stable
 
 v1.2.0 follows v1.2.0-beta after real first-run feedback is addressed.
 
@@ -165,9 +165,9 @@ Likely areas:
 - more refined progress/timeline model
 - contributor-requested improvements from beta feedback
 
-## Pro SaaS — Later paid hosted product
+## BuildFlow Managed — Later paid hosted product
 
-Pro SaaS is not part of the v1.2.0-beta Free GitHub launch.
+BuildFlow Managed is not part of the v1.2.0-beta BuildFlow Local launch.
 
 Goal:
 
@@ -199,13 +199,22 @@ Examples:
 
 - v1.0 means the stable baseline already released.
 - v1.1 means documentation and planning maturity.
-- v1.2.0-beta means public Free GitHub beta readiness after the beta release gate is verified.
-- v1.2.0 means stable Free GitHub self-hosted release after beta feedback is addressed.
-- Pro SaaS and Team are later and must not be described as currently implemented.
+- v1.2.0-beta means public BuildFlow Local beta readiness after the beta release gate is verified.
+- v1.2.0 means stable BuildFlow Local self-hosted release after beta feedback is addressed.
+- BuildFlow Managed and Team are later and must not be described as currently implemented.
 
 ## Current next phase
 
-The current next phase is **BuildFlow v1.2.0-beta: Free GitHub public beta**.
+The current next phase has two coordinated tracks:
+
+1. **BuildFlow Local beta** — keep improving the self-hosted local-first product and onboarding for free GitHub users.
+2. **BuildFlow Managed validation** — continue the Dokploy staging work as the managed relay / SaaS path without changing the free Local default.
+
+These tracks do not conflict. The managed path should be documented as a separate product mode, not a universal replacement for local/self-hosted usage.
+
+Do not describe BuildFlow Managed as the default path for free GitHub users.
+
+Do not describe local cleanup as allowed until a later explicit decision says so.
 
 All new work should be filtered through this question:
 

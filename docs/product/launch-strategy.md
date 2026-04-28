@@ -16,6 +16,10 @@ The free GitHub version should not feel crippled, artificially limited, or like 
 
 BuildFlow Pro should monetize convenience, hosted reliability, managed execution, persistence, and collaboration readiness — not the removal of artificial limits from the free product.
 
+BuildFlow Local is the free GitHub product mode and should remain fully self-hosted.
+
+BuildFlow Managed is the future paid convenience mode and may use BuildFlow-operated relay infrastructure.
+
 ## Launch phases
 
 ## Phase 1: Free GitHub launch
@@ -66,6 +70,7 @@ Free GitHub should include:
 - AI-agnostic handoff direction
 - local progress/status tracking
 - clear setup and local operation docs
+- explicit self-hosting guidance for user-owned endpoints, tunnels, and domains
 
 Free GitHub should not include:
 
@@ -78,6 +83,7 @@ Free GitHub should not include:
 - direct hosted executor sessions
 - team roles or permissions
 - billing/account management
+- dependency on BuildFlow-operated relay infrastructure by default
 
 Free GitHub should avoid:
 
@@ -203,13 +209,15 @@ The beta should communicate:
 - useful today for ChatGPT-to-Codex/Claude handoff
 - early, active, and improving quickly
 - stars, issues, discussions, and workflow feedback are welcome
-- Pro SaaS and Team are later, not required for the free local workflow
+- BuildFlow Local is the free default
+- BuildFlow Managed is later and paid
+- Team is later, not required for the free local workflow
 
 ## Free vs Pro boundary
 
 ## Free GitHub promise
 
-BuildFlow Free is the complete local-first planning and handoff workflow.
+BuildFlow Free is BuildFlow Local: the complete local-first planning and handoff workflow.
 
 A free user should be able to:
 
@@ -224,7 +232,7 @@ A free user should be able to:
 
 ## Pro SaaS promise
 
-BuildFlow Pro removes setup friction and adds managed cloud convenience.
+BuildFlow Pro is BuildFlow Managed: it removes setup friction and adds managed cloud convenience.
 
 A Pro user should be able to:
 
@@ -251,7 +259,7 @@ A Team user should be able to:
 
 ## Dashboard design implications
 
-The dashboard should be designed as a free-first product surface that can later support Pro and Team features without a redesign.
+The dashboard should be designed as a Local-first product surface that can later support Managed and Team features without a redesign.
 
 Free dashboard should show:
 

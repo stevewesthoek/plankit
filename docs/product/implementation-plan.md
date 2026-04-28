@@ -28,6 +28,12 @@ Future work should be organized around these areas:
 - Keep `docs/product/releases/custom-gpt-actions-v1.0.md` as the stable release note for the current baseline.
 - Mark older docs as historical/reference instead of rewriting them into new canonical truth.
 - Avoid duplicating canonical content across many files.
+- For BuildFlow Dokploy migration docs, always state the current URL ownership before giving deployment instructions.
+- State clearly that `buildflow.prochat.tools` currently points to Steve's local BuildFlow through Cloudflare tunnel until Phase 4 is explicitly approved.
+- State clearly that `buildflow-staging.prochat.tools` is the temporary Dokploy staging route.
+- Do not write production-domain instructions that imply Dokploy already owns `buildflow.prochat.tools` before Phase 4 approval.
+- Do not duplicate or contradict the canonical topology: one Docker image/container, public proxy port 3054, internal relay port 3053, internal web app port 3055, persistent volume /var/lib/buildflow.
+- Do not include active guidance to stop, clean up, restart, or decommission Steve's local runtime before explicit Phase 5 approval.
 
 ## Release note rules
 

@@ -11,6 +11,7 @@ import { workspaceListCommand } from './commands/workspace'
 import { treeCommand } from './commands/tree'
 import { grepCommand } from './commands/grep'
 import { contextCommand } from './commands/context'
+import { diagnosticRedactionCommand } from './commands/diagnose-redaction'
 
 const program = new Command()
 
@@ -80,5 +81,7 @@ program
   .action((workspace, query, options) => {
     contextCommand(workspace, query || '', parseInt(options.depth, 10))
   })
+
+program.addCommand(diagnosticRedactionCommand())
 
 program.parse()

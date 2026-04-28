@@ -1,4 +1,7 @@
 # Status note: This document is historical/reference material. For the current roadmap and implementation plan, see `docs/product/roadmap.md` and `docs/product/implementation-plan.md`.
+
+Migration safety note: commands, ports, endpoints, and local runtime instructions in this historical document are reference-only and must not be used to stop, clean up, replace, or reconfigure Steve's current local BuildFlow setup during the Dokploy migration.
+
 # Phase 3.5: Smooth ChatGPT Custom GPT Usage
 
 ## Status

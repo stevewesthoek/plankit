@@ -2,6 +2,8 @@
 
 **Status:** ✅ Complete. Ready for Dokploy deployment.
 
+**Migration status correction:** This historical report means the relay implementation was considered ready for Dokploy planning/testing. It does not mean `buildflow.prochat.tools` is already on Dokploy or that production cutover is approved. Current sequence: `buildflow.prochat.tools` remains Steve's local BuildFlow endpoint; `buildflow-staging.prochat.tools` is used for Dokploy staging; `buildflow.prochat.tools` may switch to Dokploy only after Steve explicitly approves Phase 4; local cleanup may happen only after Steve explicitly approves Phase 5.
+
 **Commits:**
 - `6cd8298` — Fix GET routes in relay mode and harden security/privacy
 - `730c9e0` — Add missing token passthrough to context/active route

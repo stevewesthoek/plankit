@@ -128,6 +128,13 @@ export function truncateContent(content: string, maxBytes: number): { content: s
 
 export function redactSecrets(content: string): string {
   return content
-    .replace(/(AWS_SECRET_ACCESS_KEY|OPENAI_API_KEY|API_KEY|TOKEN|SECRET|PASSWORD)\s*[:=]\s*.+/gi, '$1=[REDACTED]')
+    // Redact double-quoted real secrets, but preserve documentation placeholders [...]
+    .replace(/(AWS_SECRET_ACCESS_KEY|OPENAI_API_KEY|API_KEY|TOKEN|SECRET|PASSWORD)\s*[:=]\s*"(?!\[)([^"]+)"/gi, '$1="[REDACTED]"')
+    // Redact single-quoted real secrets, but preserve documentation placeholders [...]
+    .replace(/(AWS_SECRET_ACCESS_KEY|OPENAI_API_KEY|API_KEY|TOKEN|SECRET|PASSWORD)\s*[:=]\s*'(?!\[)([^']+)'/gi, "$1='[REDACTED]'")
+    // Redact unquoted real secrets: alphanumeric/special chars that look like tokens
+    // Skip documentation placeholders like "[generate-...]" or "[new-dev-token-only]"
+    .replace(/(AWS_SECRET_ACCESS_KEY|OPENAI_API_KEY|API_KEY|TOKEN|SECRET|PASSWORD)\s*[:=]\s*(?!\[)([a-zA-Z0-9_\-\.]{8,})/gi, '$1=[REDACTED]')
+    // Redact private keys
     .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, '[REDACTED PRIVATE KEY]')
 }
