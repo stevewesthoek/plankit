@@ -159,6 +159,7 @@ export class BridgeClient {
     try {
       switch (command) {
         case 'health':
+        case 'action_proxy:status':
           result = {
             status: 'ok',
             deviceConnected: this.ws?.readyState === WebSocket.OPEN
@@ -304,7 +305,8 @@ export class BridgeClient {
           break
         }
 
-        case 'get-active-sources': {
+        case 'get-active-sources':
+        case 'action_proxy:get-active-sources': {
           const active = getActiveSourceContext()
           const sources = getSourcesSafe().map(source => ({ id: source.id, label: source.label, enabled: source.enabled, active: active.activeSourceIds.includes(source.id), type: (source as { type?: string }).type || 'unknown' }))
           result = {
