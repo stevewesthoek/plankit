@@ -163,6 +163,15 @@ This is a documentation gate, not a requirement to mutate the current developer 
 - [ ] Facebook launch post draft exists.
 - [ ] Demo workflow can be performed live without private setup.
 
+### Demo asset expectation
+
+For the public beta, keep at least one repo-visible demo path ready:
+
+- a dashboard screenshot in `docs/product/` or `docs/product/assets/`
+- or a short GIF/video reference that shows the Local quickstart path and dashboard
+
+The demo asset should show the free GitHub Local flow, not the Managed staging path.
+
 ## Gate 8: Verification commands
 
 Run before marking v1.2.0-beta ready:
