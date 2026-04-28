@@ -490,6 +490,41 @@ const server = http.createServer(async (req, res) => {
           version: 1
         })
 
+        // Status is a read-only relay health check that only needs device connectivity.
+        // Answer it directly so staging does not depend on the device command round-trip.
+        if (relayCommand === 'action_proxy:status') {
+          const duration = Date.now() - startTime
+          const result = {
+            status: 'ok',
+            deviceConnected: true
+          }
+
+          requestAudit.logRequest({
+            requestId,
+            deviceId: device.deviceId,
+            command: relayCommand,
+            status: 'success',
+            createdAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            duration,
+            version: 1
+          })
+
+          logToFile({
+            timestamp: new Date().toISOString(),
+            tool: 'relay_action_proxy',
+            status: 'success',
+            endpoint: agentEndpoint,
+            deviceId: device.deviceId,
+            requestId,
+            duration
+          })
+
+          res.writeHead(200)
+          res.end(JSON.stringify(result))
+          return
+        }
+
         // Create pending request with timeout
         const timeout = setTimeout(() => {
           timedOut = true
