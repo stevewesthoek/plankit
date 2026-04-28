@@ -7,6 +7,8 @@ type NormalizedSource = {
   enabled: boolean
   active: boolean
   type?: string
+  writable?: boolean
+  writePolicy?: Record<string, unknown>
 }
 
 type NormalizedContextResult = {
@@ -22,6 +24,18 @@ type VerifiedWriteResult = {
   bytesOnDisk: number
   contentHash: string
   contentPreview: string
+}
+
+type WritePolicy = {
+  allowCreate?: boolean
+  allowOverwrite?: boolean
+  allowAppend?: boolean
+  allowPatch?: boolean
+  allowCreateParentDirectories?: boolean
+  allowedRoots?: string[]
+  blockedGlobs?: string[]
+  protectedGlobs?: string[]
+  maxWriteBytes?: number
 }
 
 export async function requireExplicitSourceId(body: Record<string, unknown>, userToken?: string) {
@@ -41,6 +55,54 @@ export async function requireExplicitSourceId(body: Record<string, unknown>, use
   return { error: 'Target sourceId required when multiple sources are active.', status: 400 }
 }
 
+function normalizePath(input: string): string {
+  return input.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+/g, '/').trim()
+}
+
+function matchesWildcard(pattern: string, value: string): boolean {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '::DOUBLESTAR::')
+    .replace(/\*/g, '[^/]*')
+    .replace(/::DOUBLESTAR::/g, '.*')
+  return new RegExp(`^${escaped}$`, 'i').test(value)
+}
+
+function matchesAny(patterns: unknown, value: string): boolean {
+  if (!Array.isArray(patterns)) return false
+  return patterns.some(pattern => typeof pattern === 'string' && pattern.length > 0 && matchesWildcard(pattern, value))
+}
+
+function classifyBlockedWrite(path: string, policy?: WritePolicy) {
+  const normalized = normalizePath(path)
+  if (!normalized) {
+    return { code: 'WRITE_PATH_BLOCKED', message: 'This path is blocked by the source write policy.', userMessage: 'BuildFlow can read this file, but it needs a valid repo-relative path to write it.', reason: 'empty_path', hint: 'Provide a repo-relative path like docs/README.md.' }
+  }
+  if (normalized.startsWith('..') || normalized.includes('/../') || normalized === '..') {
+    return { code: 'PATH_TRAVERSAL_BLOCKED', message: 'Path traversal outside the repo is blocked.', userMessage: 'BuildFlow can only write inside the connected source root.', reason: 'path_traversal', hint: 'Use a repo-relative path inside the source root.' }
+  }
+  if (path.startsWith('/')) {
+    return { code: 'ABSOLUTE_PATH_BLOCKED', message: 'Absolute paths outside the repo are blocked.', userMessage: 'BuildFlow can only write inside the connected source root.', reason: 'absolute_path', hint: 'Use a repo-relative path inside the source root.' }
+  }
+  if (normalized.split('/').some(part => part === '.git' || part === 'node_modules' || part === '.next' || part === 'dist' || part === 'build' || part === 'coverage')) {
+    return { code: 'PROTECTED_PATH', message: 'This file or directory is protected by policy.', userMessage: 'BuildFlow is not allowed to write to protected runtime or dependency directories.', reason: 'protected_directory', hint: 'Choose a docs path or update the source policy if intentional.' }
+  }
+  if (matchesAny(policy?.blockedGlobs, normalized)) {
+    return { code: 'SECRET_PATH_BLOCKED', message: 'This path is blocked because it may contain secrets.', userMessage: 'BuildFlow will not write to secret-like files such as .env or private key paths.', reason: 'blocked_glob', hint: 'Use a docs or project note path instead.' }
+  }
+  if (matchesAny(policy?.protectedGlobs, normalized)) {
+    return { code: 'PROTECTED_PATH', message: 'This file is protected by policy.', userMessage: 'BuildFlow is not allowed to write to this protected file.', reason: 'protected_glob', hint: 'Choose a docs path or update the source policy if intentional.' }
+  }
+  const allowedRoots = Array.isArray(policy?.allowedRoots) ? policy!.allowedRoots! : []
+  const allowRoot = allowedRoots.some(root => typeof root === 'string' && root.length > 0 && (
+    root === '*.md' ? normalized.endsWith('.md') : root.endsWith('/**') ? normalized === root.slice(0, -3) || normalized.startsWith(root.slice(0, -3) + '/') : normalized === root || normalized.startsWith(`${root}/`)
+  ))
+  if (!allowRoot) {
+    return { code: 'WRITE_PATH_BLOCKED', message: 'This path is blocked by the source write policy.', userMessage: 'BuildFlow can read this file, but the current write policy blocks changes to this path.', reason: 'path_not_allowed', hint: 'Choose an allowed docs path or update the source write policy.' }
+  }
+  return null
+}
+
 function normalizeSourceRecord(source: Record<string, unknown>): NormalizedSource & {
   indexed?: boolean
   indexStatus?: string
@@ -53,12 +115,14 @@ function normalizeSourceRecord(source: Record<string, unknown>): NormalizedSourc
   const enabled = source.enabled !== false
   const active = source.active === true
   const type = typeof source.type === 'string' && source.type.trim() ? source.type : undefined
+  const writable = typeof source.writable === 'boolean' ? source.writable : undefined
+  const writePolicy = source.writePolicy && typeof source.writePolicy === 'object' ? source.writePolicy as Record<string, unknown> : undefined
   const indexed = source.indexed === true
   const indexStatus = typeof source.indexStatus === 'string' && source.indexStatus.trim() ? source.indexStatus : undefined
   const indexedFileCount = typeof source.indexedFileCount === 'number' ? source.indexedFileCount : undefined
   const lastIndexedAt = typeof source.lastIndexedAt === 'string' && source.lastIndexedAt.trim() ? source.lastIndexedAt : undefined
   const searchable = typeof source.searchable === 'boolean' ? source.searchable : (indexStatus ?? (indexed ? 'ready' : 'pending')) === 'ready'
-  return { id, label, enabled, active, ...(type ? { type } : {}), ...(indexed !== undefined ? { indexed } : {}), ...(indexStatus ? { indexStatus } : {}), ...(indexedFileCount !== undefined ? { indexedFileCount } : {}), ...(lastIndexedAt ? { lastIndexedAt } : {}), ...(searchable !== undefined ? { searchable } : {}) }
+  return { id, label, enabled, active, ...(type ? { type } : {}), ...(writable !== undefined ? { writable } : {}), ...(writePolicy ? { writePolicy } : {}), ...(indexed !== undefined ? { indexed } : {}), ...(indexStatus ? { indexStatus } : {}), ...(indexedFileCount !== undefined ? { indexedFileCount } : {}), ...(lastIndexedAt ? { lastIndexedAt } : {}), ...(searchable !== undefined ? { searchable } : {}) }
 }
 
 function normalizeSourcesList(sourcesPayload: unknown) {
@@ -96,7 +160,9 @@ function normalizeContextResult(sourcesPayload: unknown, activePayload: unknown,
     label: source.label,
     enabled: source.enabled,
     active: activeIds.has(source.id) || source.active === true,
-    ...(source.type ? { type: source.type } : {})
+    ...(source.type ? { type: source.type } : {}),
+    ...(source.writable !== undefined ? { writable: source.writable } : {}),
+    ...(source.writePolicy ? { writePolicy: source.writePolicy } : {})
   }))
 
   return {
@@ -151,7 +217,7 @@ async function fetchJson(endpoint: string, init?: RequestInit): Promise<unknown>
 
 export function unwrapActionError(err: unknown, fallback: string) {
   if (err instanceof ActionTransportError) {
-    return { error: err.message, status: err.statusCode }
+    return { error: err.payload || err.message, status: err.statusCode }
   }
   return { error: `${fallback}: ${String(err)}`, status: 500 }
 }
@@ -195,6 +261,46 @@ async function ensureContextSourcesAllowed(sourceIds: string[], userToken?: stri
   }
 }
 
+async function preflightWrite(body: Record<string, unknown>, userToken?: string) {
+  const sourceError = await requireExplicitSourceId(body, userToken)
+  if (sourceError) return sourceError
+  const sourceId = typeof body.sourceId === 'string' ? body.sourceId : undefined
+  const path = typeof body.path === 'string' ? body.path : ''
+  const changeType = body.changeType === 'append' || body.changeType === 'overwrite' || body.changeType === 'patch' ? body.changeType : 'create'
+  const sourceMap = await loadSourceMap(userToken)
+  const source = sourceId ? sourceMap.map.get(sourceId) : sourceMap.sources[0]
+  const policy = (source?.writePolicy || {}) as WritePolicy
+  const blocked = classifyBlockedWrite(path, policy)
+  if (blocked) {
+    return {
+      status: 403,
+      resultStatus: 'error' as const,
+      allowed: false,
+      verified: false,
+      sourceId: source?.id || sourceId || '',
+      path,
+      requestedPath: path,
+      normalizedPath: normalizePath(path),
+      sourceRootRelativePath: normalizePath(path),
+      changeType,
+      error: { ...blocked, policy }
+    }
+  }
+  return {
+    status: 'ok' as const,
+    allowed: true,
+    verified: false,
+    sourceId: source?.id || sourceId || '',
+    requestedPath: path,
+    normalizedPath: normalizePath(path),
+    sourceRootRelativePath: normalizePath(path),
+    changeType,
+    wouldCreateParentDirectories: true,
+    wouldWrite: true,
+    policy
+  }
+}
+
 export async function listBuildFlowSources(userToken?: string) {
   const mode = getBackendMode()
   const headers: Record<string, string> = { method: 'GET' }
@@ -210,7 +316,9 @@ export async function listBuildFlowSources(userToken?: string) {
       enabled: source.enabled,
       active: source.active,
       indexStatus: source.indexStatus ?? (source.searchable ? 'ready' : 'pending'),
-      searchable: source.searchable === true
+      searchable: source.searchable === true,
+      writable: source.writable === true,
+      writePolicy: source.writePolicy
     }))
   }
 }
@@ -369,6 +477,9 @@ export async function dispatchBuildFlowRead(body: Record<string, unknown>, userT
 }
 
 export async function dispatchBuildFlowArtifact(body: Record<string, unknown>, userToken?: string) {
+  if (body.dryRun === true || body.preflight === true) {
+    return preflightWrite({ ...body, changeType: 'create' }, userToken)
+  }
   const sourceError = await requireExplicitSourceId(body, userToken)
   if (sourceError) return sourceError
   const result = await executeAction('/api/create-artifact', body, userToken)
@@ -377,6 +488,9 @@ export async function dispatchBuildFlowArtifact(body: Record<string, unknown>, u
 }
 
 export async function dispatchBuildFlowFileChange(body: Record<string, unknown>, userToken?: string) {
+  if (body.dryRun === true || body.preflight === true) {
+    return preflightWrite(body, userToken)
+  }
   const sourceError = await requireExplicitSourceId(body, userToken)
   if (sourceError) return sourceError
 

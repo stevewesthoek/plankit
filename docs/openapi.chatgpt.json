@@ -226,16 +226,22 @@
                           },
                           "searchable": {
                             "type": "boolean"
+                          },
+                          "writable": {
+                            "type": "boolean"
+                          },
+                          "writePolicy": {
+                            "type": "object"
                           }
                         },
-                        "required": [
-                          "id",
-                          "label",
-                          "enabled",
-                          "active",
-                          "indexStatus",
-                          "searchable"
-                        ]
+                  "required": [
+                    "id",
+                    "label",
+                    "enabled",
+                    "active",
+                    "indexStatus",
+                    "searchable"
+                  ]
                       }
                     }
                   },
@@ -1345,10 +1351,22 @@
                     "status": {
                       "type": "string"
                     },
+                    "allowed": {
+                      "type": "boolean"
+                    },
                     "sourceId": {
                       "type": "string"
                     },
                     "path": {
+                      "type": "string"
+                    },
+                    "requestedPath": {
+                      "type": "string"
+                    },
+                    "normalizedPath": {
+                      "type": "string"
+                    },
+                    "sourceRootRelativePath": {
                       "type": "string"
                     },
                     "artifactType": {
@@ -1376,6 +1394,15 @@
                       "type": "integer"
                     },
                     "replacements": {
+                      "type": "integer"
+                    },
+                    "matchCount": {
+                      "type": "integer"
+                    },
+                    "bytesBefore": {
+                      "type": "integer"
+                    },
+                    "bytesAfter": {
                       "type": "integer"
                     },
                     "contentHash": {
@@ -1572,11 +1599,19 @@
                     "description": "Allow multiple patch matches.",
                     "default": false
                   },
-                  "reason": {
-                    "type": "string",
-                    "description": "Why the file changed."
-                  }
-                },
+                    "reason": {
+                      "type": "string",
+                      "description": "Why the file changed."
+                    },
+                    "dryRun": {
+                      "type": "boolean",
+                      "description": "Check whether the write would be allowed without writing."
+                    },
+                    "preflight": {
+                      "type": "boolean",
+                      "description": "Alias for dryRun."
+                    }
+                  },
                 "required": [
                   "changeType",
                   "sourceId",

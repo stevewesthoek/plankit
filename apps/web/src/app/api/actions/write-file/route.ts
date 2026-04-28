@@ -16,6 +16,10 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json(data)
   } catch (err) {
-    return unwrapActionError(err, 'Write file error')
+    const actionError = unwrapActionError(err, 'Write file error') as unknown as { error: unknown; status: number }
+    if (actionError.error && typeof actionError.error === 'object') {
+      return NextResponse.json(actionError.error, { status: actionError.status })
+    }
+    return NextResponse.json({ error: actionError.error }, { status: actionError.status })
   }
 }

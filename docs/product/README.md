@@ -10,6 +10,7 @@ This directory is the canonical documentation path for BuildFlow planning, relea
 - [Roadmap](./roadmap.md)
 - [Implementation plan](./implementation-plan.md)
 - [BuildFlow v1.0 release note](./releases/custom-gpt-actions-v1.0.md)
+- [BuildFlow v1.2.1-beta release note](./releases/buildflow-v1.2.1-beta.md)
 - [Custom GPT instructions](../CUSTOM_GPT_INSTRUCTIONS.md)
 - [Custom GPT OpenAPI import guide](../openapi.chatgpt/README.md)
 

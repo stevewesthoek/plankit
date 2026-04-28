@@ -1,6 +1,6 @@
 {
   "name": "buildflow",
-  "version": "0.1.0",
+  "version": "1.2.1-beta",
   "private": true,
   "description": "BuildFlow turns ideas into execution packets tailored to your actual local toolchain",
   "workspaces": [

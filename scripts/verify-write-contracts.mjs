@@ -158,13 +158,14 @@ async function verifyPositiveWrites() {
 
 async function verifyBlockedPaths() {
   const cases = [
-    { path: '.env', label: '.env' },
-    { path: '.env.local', label: '.env.local' },
-    { path: '../DESIGN.md', label: '../ traversal' },
-    { path: '.git/config', label: '.git/config' },
-    { path: 'node_modules/something.md', label: 'node_modules' },
-    { path: 'RANDOM.md', label: 'arbitrary root markdown' },
-    { path: 'random.txt', label: 'arbitrary root text' }
+    { path: '.env', label: '.env', code: 'SECRET_PATH_BLOCKED' },
+    { path: '.env.local', label: '.env.local', code: 'SECRET_PATH_BLOCKED' },
+    { path: '../DESIGN.md', label: '../ traversal', code: 'PATH_TRAVERSAL_BLOCKED' },
+    { path: '/tmp/outside.md', label: 'absolute path', code: 'ABSOLUTE_PATH_BLOCKED' },
+    { path: '.git/config', label: '.git/config', code: 'PROTECTED_PATH' },
+    { path: 'node_modules/something.md', label: 'node_modules', code: 'PROTECTED_PATH' },
+    { path: 'RANDOM.md', label: 'arbitrary root markdown', code: 'WRITE_PATH_BLOCKED' },
+    { path: 'random.txt', label: 'arbitrary root text', code: 'WRITE_PATH_BLOCKED' }
   ]
 
   for (const testCase of cases) {
@@ -182,6 +183,11 @@ async function verifyBlockedPaths() {
 
     assert(result.response.status >= 400 && result.response.status < 600, `${testCase.label} should fail with non-2xx, got ${result.response.status}`)
     assert(typeof result.json.error === 'string' && result.json.error.length > 0, `${testCase.label} should return JSON error`)
+    if (result.json.code) {
+      assert(result.json.code === testCase.code, `${testCase.label} should return ${testCase.code}, got ${result.json.code}`)
+    } else if (result.json.error && typeof result.json.error === 'object') {
+      assert(result.json.error.code === testCase.code, `${testCase.label} should return ${testCase.code}, got ${result.json.error.code}`)
+    }
   }
 
   console.log('Blocked path checks passed.')

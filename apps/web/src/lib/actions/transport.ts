@@ -1,7 +1,7 @@
 import { getBackendUrl, getBackendMode } from './config'
 
 export class ActionTransportError extends Error {
-  constructor(message: string, public statusCode: number) {
+  constructor(message: string, public statusCode: number, public payload?: unknown) {
     super(message)
     this.name = 'ActionTransportError'
   }
@@ -34,10 +34,10 @@ export async function executeAction(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
-      throw new ActionTransportError(
-        (errorData as Record<string, unknown>).error as string || `Action failed: ${response.status}`,
-        response.status
-      )
+      const message = typeof (errorData as Record<string, unknown>).error === 'string'
+        ? (errorData as Record<string, unknown>).error as string
+        : `Action failed: ${response.status}`
+      throw new ActionTransportError(message, response.status, errorData)
     }
 
     return response.json()
@@ -96,8 +96,8 @@ export async function executeActionGET(
       cache: 'no-store'
     })
 
-    const data = await response.json().catch(() => ({}))
-    return { data, status: response.status }
+      const data = await response.json().catch(() => ({}))
+      return { data, status: response.status }
   } catch (err) {
     // Hide implementation details; don't expose raw error messages
     throw new ActionTransportError('Backend request failed', 503)

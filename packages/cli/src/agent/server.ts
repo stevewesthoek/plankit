@@ -1,4 +1,5 @@
 import Fastify from 'fastify'
+import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { Indexer } from './indexer'
@@ -9,7 +10,7 @@ import { createExportPlan } from './export'
 import { loadConfig, getWorkspaces, getSources, getSourcesSafe, addSource, removeSource, setSourceEnabled, getActiveSourceContext, setActiveSourceContext, getWriteMode, setWriteMode, getSourceIndexState, setSourceIndexStatus } from './config'
 import { reconcileIndexStateFromDocs } from './index-state'
 import { listWorkspaceTree, grepWorkspace, getWorkspaceInfo, resolveWorkspacePath, validateWorkspacePath } from './workspace'
-import { getResolvedActiveSources, isAllowedArtifactRoot, isAllowedSafeWriteRoot, isBlockedWritePath, redactSecrets, resolveTargetSourceId, resolveWithinSource, shouldIncludeEntry, truncateContent } from './safe-access'
+import { getResolvedActiveSources, isAllowedArtifactRoot, isAllowedSafeWriteRoot, isBlockedWritePath, redactSecrets, resolveTargetSourceId, resolveWithinSource, shouldIncludeEntry, truncateContent, getDefaultWritePolicy, validateWriteTarget } from './safe-access'
 import type { Workspace } from '@buildflow/shared'
 import { buildArtifactFilename, normalizeArtifactSlug, verifyWrittenFile } from './write-verification'
 
@@ -43,10 +44,19 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
         throw new Error('Write mode blocks non-artifact paths')
       }
     }
-    if (mode === 'safeWrites') {
-      if (!relPath || !isAllowedSafeWriteRoot(relPath)) {
-        throw new Error('Write path blocked')
-      }
+  }
+
+  const writeError = (reply: any, code: number, payload: Record<string, unknown>) =>
+    reply.code(code).send({ status: 'error', verified: false, ...payload })
+
+  const verifiedWrite = (fullPath: string) => {
+    const content = fs.readFileSync(fullPath, 'utf8')
+    return {
+      verified: true,
+      verifiedAt: new Date().toISOString(),
+      bytesOnDisk: Buffer.byteLength(content, 'utf8'),
+      contentHash: crypto.createHash('sha256').update(content, 'utf8').digest('hex'),
+      contentPreview: content.slice(0, 200)
     }
   }
 
@@ -77,13 +87,13 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
 
   // Health endpoint
   fastify.get('/health', async (request, reply) => {
-    return {
-      status: 'ok',
-      port,
-      vaultPath: config?.vaultPath || 'not configured',
-      indexedFiles: indexer.getDocs().length,
-      version: '0.1.0'
-    }
+      return {
+        status: 'ok',
+        port,
+        vaultPath: config?.vaultPath || 'not configured',
+        indexedFiles: indexer.getDocs().length,
+        version: '1.2.1-beta'
+      }
   })
 
   // Status endpoint
@@ -282,15 +292,27 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
       const targetFolder = folder || defaults[artifactType]
       if (!targetFolder) return reply.code(400).send({ error: 'Unknown artifact type' })
       assertWriteMode(true, targetFolder)
-      if (isBlockedWritePath(targetFolder) || !isAllowedArtifactRoot(targetFolder)) return reply.code(403).send({ error: 'Artifact folder blocked' })
       const relFilename = buildArtifactFilename(title, filename)
       const relPath = `${targetFolder.replace(/\/$/, '')}/${Date.now()}-${relFilename}`
-      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, resolveTargetSourceId(sourceId))
-      if (fs.existsSync(fullPath)) return reply.code(409).send({ error: 'Artifact already exists' })
-      fs.mkdirSync(path.dirname(fullPath), { recursive: true })
-      fs.writeFileSync(fullPath, content, 'utf-8')
-      const verification = verifyWrittenFile({ fullPath, expectedContent: content })
-      return { status: 'created', sourceId: resolvedSourceId, path: relPath, artifactType, created: true, ...verification }
+      const resolvedSourceId = resolveTargetSourceId(sourceId)
+      const sourceRoot = getResolvedActiveSources([resolvedSourceId])[0]?.path
+      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: relPath, changeType: 'create', sourceRoot })
+      if (!validation.ok) {
+        const blocked = validation as Extract<typeof validation, { ok: false }>
+        return writeError(reply, 403, {
+          sourceId: resolvedSourceId,
+          path: blocked.requestedPath,
+          requestedPath: blocked.requestedPath,
+          normalizedPath: blocked.normalizedPath,
+          sourceRootRelativePath: blocked.sourceRootRelativePath,
+          changeType: 'create',
+          error: { ...blocked.error, policy: blocked.policy }
+        })
+      }
+      if (fs.existsSync(validation.fullPath)) return reply.code(409).send({ error: 'Artifact already exists' })
+      fs.mkdirSync(validation.parentPath, { recursive: true })
+      fs.writeFileSync(validation.fullPath, content, 'utf-8')
+      return { status: 'created', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, artifactType, created: true, ...verifiedWrite(validation.fullPath) }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }
@@ -343,13 +365,25 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
       const { sourceId, path: relPath, content, mode = 'createOnly' } = request.body
       assertWriteMode(false, relPath)
       if (!relPath || typeof content !== 'string') return reply.code(400).send({ error: 'Path and content required' })
-      if (isBlockedWritePath(relPath) || !isAllowedSafeWriteRoot(relPath)) return reply.code(403).send({ error: 'Write path blocked' })
-      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, resolveTargetSourceId(sourceId))
-      if (mode === 'createOnly' && fs.existsSync(fullPath)) return reply.code(409).send({ error: 'File already exists' })
-      fs.mkdirSync(path.dirname(fullPath), { recursive: true })
-      fs.writeFileSync(fullPath, content, 'utf-8')
-      const verification = verifyWrittenFile({ fullPath, expectedContent: content })
-      return { status: 'updated', sourceId: resolvedSourceId, path: relPath, bytesWritten: Buffer.byteLength(content, 'utf8'), created: mode === 'createOnly', overwritten: mode === 'overwrite', ...verification }
+      const resolvedSourceId = resolveTargetSourceId(sourceId)
+      const sourceRoot = getResolvedActiveSources([resolvedSourceId])[0]?.path
+      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: relPath, changeType: mode === 'overwrite' ? 'overwrite' : 'create', sourceRoot })
+      if (!validation.ok) {
+        const blocked = validation as Extract<typeof validation, { ok: false }>
+        return writeError(reply, 403, {
+          sourceId: resolvedSourceId,
+          path: blocked.requestedPath,
+          requestedPath: blocked.requestedPath,
+          normalizedPath: blocked.normalizedPath,
+          sourceRootRelativePath: blocked.sourceRootRelativePath,
+          changeType: mode === 'overwrite' ? 'overwrite' : 'create',
+          error: { ...blocked.error, policy: blocked.policy }
+        })
+      }
+      if (mode === 'createOnly' && fs.existsSync(validation.fullPath)) return reply.code(409).send({ error: 'File already exists' })
+      fs.mkdirSync(validation.parentPath, { recursive: true })
+      fs.writeFileSync(validation.fullPath, content, 'utf-8')
+      return { status: 'updated', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, bytesWritten: Buffer.byteLength(content, 'utf8'), created: mode === 'createOnly', overwritten: mode === 'overwrite', changeType: mode === 'overwrite' ? 'overwrite' : 'create', ...verifiedWrite(validation.fullPath) }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }
@@ -361,20 +395,63 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
       assertWriteMode(false, relPath)
       if (!relPath || typeof find !== 'string' || find.length === 0) return reply.code(400).send({ error: 'Path and find required' })
       if (typeof replace !== 'string') return reply.code(400).send({ error: 'Replace required' })
-      if (isBlockedWritePath(relPath) || !isAllowedSafeWriteRoot(relPath)) return reply.code(403).send({ error: 'Patch path blocked' })
-      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, resolveTargetSourceId(sourceId))
-      if (!fs.existsSync(fullPath)) return reply.code(404).send({ error: 'File not found' })
-      const original = fs.readFileSync(fullPath, 'utf-8')
+      const resolvedSourceId = resolveTargetSourceId(sourceId)
+      const sourceRoot = getResolvedActiveSources([resolvedSourceId])[0]?.path
+      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: relPath, changeType: 'patch', sourceRoot })
+      if (!validation.ok) {
+        const blocked = validation as Extract<typeof validation, { ok: false }>
+        return writeError(reply, 403, {
+          sourceId: resolvedSourceId,
+          path: blocked.requestedPath,
+          requestedPath: blocked.requestedPath,
+          normalizedPath: blocked.normalizedPath,
+          sourceRootRelativePath: blocked.sourceRootRelativePath,
+          changeType: 'patch',
+          error: { ...blocked.error, policy: blocked.policy }
+        })
+      }
+      if (!fs.existsSync(validation.fullPath)) return reply.code(404).send({ error: 'File not found' })
+      const original = fs.readFileSync(validation.fullPath, 'utf-8')
       const matches = original.split(find).length - 1
-      if (matches !== 1) return reply.code(400).send({ error: matches === 0 ? 'Find text not found' : 'Find text matched multiple times' })
+      if (matches === 0) {
+        return writeError(reply, 409, {
+          sourceId: resolvedSourceId,
+          path: relPath,
+          requestedPath: relPath,
+          normalizedPath: validation.normalizedPath,
+          sourceRootRelativePath: validation.sourceRootRelativePath,
+          changeType: 'patch',
+          error: {
+            code: 'PATCH_FIND_NOT_FOUND',
+            message: 'The patch text was not found, so no file was changed.',
+            userMessage: 'The patch text was not found, so no file was changed.',
+            reason: 'find_not_found',
+            hint: 'Adjust the find text so it matches the current file content.',
+            policy: validation.policy
+          }
+        })
+      }
+      if (matches !== 1) {
+        return writeError(reply, 409, {
+          sourceId: resolvedSourceId,
+          path: relPath,
+          requestedPath: relPath,
+          normalizedPath: validation.normalizedPath,
+          sourceRootRelativePath: validation.sourceRootRelativePath,
+          changeType: 'patch',
+          error: {
+            code: 'PATCH_MULTIPLE_MATCHES',
+            message: 'The patch text matched multiple places.',
+            userMessage: 'The patch text matched multiple places. Provide a more specific find string.',
+            reason: 'multiple_matches',
+            hint: 'Use a more specific find string or set allowMultiple to true.',
+            policy: validation.policy
+          }
+        })
+      }
       const updated = original.replace(find, replace)
-      fs.writeFileSync(fullPath, updated, 'utf-8')
-      const verification = verifyWrittenFile({
-        fullPath,
-        expectedContains: replace.length > 0 ? [replace] : [],
-        expectedNotContains: [find]
-      })
-      return { status: 'updated', sourceId: resolvedSourceId, path: relPath, replacements: 1, ...verification }
+      fs.writeFileSync(validation.fullPath, updated, 'utf-8')
+      return { status: 'updated', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: 'patch', replacements: 1, matchCount: matches, bytesBefore: Buffer.byteLength(original, 'utf8'), bytesAfter: Buffer.byteLength(updated, 'utf8'), ...verifiedWrite(validation.fullPath) }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }
@@ -405,16 +482,25 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
       const { sourceId, path: relPath, content, separator = '\n\n' } = request.body
       assertWriteMode(false, relPath)
       if (!relPath || typeof content !== 'string') return reply.code(400).send({ error: 'Path and content required' })
-      if (isBlockedWritePath(relPath) || !isAllowedSafeWriteRoot(relPath)) return reply.code(403).send({ error: 'Append path blocked' })
-      const { fullPath, sourceId: resolvedSourceId } = resolveWithinSource(relPath, resolveTargetSourceId(sourceId))
-      if (!fs.existsSync(fullPath)) return reply.code(404).send({ error: 'File not found' })
+      const resolvedSourceId = resolveTargetSourceId(sourceId)
+      const sourceRoot = getResolvedActiveSources([resolvedSourceId])[0]?.path
+      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: relPath, changeType: 'append', sourceRoot })
+      if (!validation.ok) {
+        const blocked = validation as Extract<typeof validation, { ok: false }>
+        return writeError(reply, 403, {
+          sourceId: resolvedSourceId,
+          path: blocked.requestedPath,
+          requestedPath: blocked.requestedPath,
+          normalizedPath: blocked.normalizedPath,
+          sourceRootRelativePath: blocked.sourceRootRelativePath,
+          changeType: 'append',
+          error: { ...blocked.error, policy: blocked.policy }
+        })
+      }
+      if (!fs.existsSync(validation.fullPath)) return reply.code(404).send({ error: 'File not found' })
       const appended = `${separator}${content}`
-      fs.appendFileSync(fullPath, appended, 'utf-8')
-      const verification = verifyWrittenFile({
-        fullPath,
-        expectedContains: [content]
-      })
-      return { status: 'updated', sourceId: resolvedSourceId, path: relPath, bytesAppended: Buffer.byteLength(appended, 'utf8'), ...verification }
+      fs.appendFileSync(validation.fullPath, appended, 'utf-8')
+      return { status: 'updated', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: 'append', bytesAppended: Buffer.byteLength(appended, 'utf8'), ...verifiedWrite(validation.fullPath) }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }
@@ -507,7 +593,9 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
         indexStatus: source.indexStatus || 'unknown',
         indexedFileCount: source.indexedFileCount,
         lastIndexedAt: source.lastIndexedAt,
-        indexError: source.indexError
+        indexError: source.indexError,
+        writable: source.enabled !== false,
+        writePolicy: getDefaultWritePolicy()
       }))
 
       return reply.header('Cache-Control', 'no-store').send({ sources })

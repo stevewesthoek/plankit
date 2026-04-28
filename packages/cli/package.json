@@ -1,6 +1,6 @@
 {
   "name": "buildflow",
-  "version": "0.1.0",
+  "version": "1.2.1-beta",
   "description": "Local CLI agent for BuildFlow",
   "bin": {
     "buildflow": "dist/index.js"

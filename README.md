@@ -19,7 +19,7 @@ BuildFlow is a local-first, open-source planning and handoff layer for AI-native
 For the public GitHub beta, start with the Local path and the beta release note:
 
 - Local quickstart: `pnpm install` -> `pnpm local:restart` -> `http://127.0.0.1:3054/dashboard`
-- Beta release note: [`docs/product/releases/buildflow-v1.2.0-beta.md`](docs/product/releases/buildflow-v1.2.0-beta.md)
+- Beta release note: [`docs/product/releases/buildflow-v1.2.1-beta.md`](docs/product/releases/buildflow-v1.2.1-beta.md)
 - Beta gate: [`docs/product/beta-release-gate.md`](docs/product/beta-release-gate.md)
 - Managed/SaaS is later and out of scope unless it directly blocks Local beta readiness.
 

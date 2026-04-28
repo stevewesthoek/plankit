@@ -11,7 +11,9 @@ const sourceItemSchema = {
     enabled: { type: 'boolean' },
     active: { type: 'boolean' },
     indexStatus: { type: 'string' },
-    searchable: { type: 'boolean' }
+    searchable: { type: 'boolean' },
+    writable: { type: 'boolean' },
+    writePolicy: { type: 'object', additionalProperties: true }
   },
   required: ['id', 'label', 'enabled', 'active', 'indexStatus', 'searchable']
 }
@@ -47,6 +49,9 @@ const writeResultSchema = {
     bytesWritten: { type: 'integer' },
     bytesAppended: { type: 'integer' },
     replacements: { type: 'integer' },
+    matchCount: { type: 'integer' },
+    bytesBefore: { type: 'integer' },
+    bytesAfter: { type: 'integer' },
     contentHash: { type: 'string' },
     contentPreview: { type: 'string' }
   },
@@ -363,14 +368,16 @@ const openapi = {
               schema: {
                 type: 'object',
                 additionalProperties: false,
-                properties: {
-                  sourceId: { type: 'string', description: 'Target source id.' },
-                  artifactType: { type: 'string', enum: ['implementation_plan', 'codex_prompt', 'claude_prompt', 'architecture_note', 'research_summary', 'test_plan', 'migration_plan', 'task_brief', 'general_doc'], description: 'Artifact type.' },
-                  title: { type: 'string', description: 'Artifact title.' },
-                  content: { type: 'string', description: 'Markdown content.' },
-                  folder: { type: 'string', description: 'Optional folder.' },
-                  filename: { type: 'string', description: 'Optional filename.' }
-                },
+                  properties: {
+                    sourceId: { type: 'string', description: 'Target source id.' },
+                    artifactType: { type: 'string', enum: ['implementation_plan', 'codex_prompt', 'claude_prompt', 'architecture_note', 'research_summary', 'test_plan', 'migration_plan', 'task_brief', 'general_doc'], description: 'Artifact type.' },
+                    title: { type: 'string', description: 'Artifact title.' },
+                    content: { type: 'string', description: 'Markdown content.' },
+                    folder: { type: 'string', description: 'Optional folder.' },
+                    filename: { type: 'string', description: 'Optional filename.' },
+                    dryRun: { type: 'boolean', description: 'Check whether the artifact write would be allowed without writing.' },
+                    preflight: { type: 'boolean', description: 'Alias for dryRun.' }
+                  },
                 required: ['artifactType', 'title', 'content']
               }
             }
@@ -403,17 +410,19 @@ const openapi = {
               schema: {
                 type: 'object',
                 additionalProperties: false,
-                properties: {
-                  changeType: { type: 'string', enum: ['append', 'create', 'overwrite', 'patch'], description: 'Choose append, create, overwrite, or patch.' },
-                  sourceId: { type: 'string', description: 'Target source id.' },
-                  path: { type: 'string', description: 'Target file path.' },
-                  content: { type: 'string', description: 'Content for append/create/overwrite.' },
-                  find: { type: 'string', description: 'Exact text to replace.' },
-                  replace: { type: 'string', description: 'Replacement text.' },
-                  separator: { type: 'string', description: 'Append separator.', default: '\n\n' },
-                  allowMultiple: { type: 'boolean', description: 'Allow multiple patch matches.', default: false },
-                  reason: { type: 'string', description: 'Why the file changed.' }
-                },
+                  properties: {
+                    changeType: { type: 'string', enum: ['append', 'create', 'overwrite', 'patch'], description: 'Choose append, create, overwrite, or patch.' },
+                    sourceId: { type: 'string', description: 'Target source id.' },
+                    path: { type: 'string', description: 'Target file path.' },
+                    content: { type: 'string', description: 'Content for append/create/overwrite.' },
+                    find: { type: 'string', description: 'Exact text to replace.' },
+                    replace: { type: 'string', description: 'Replacement text.' },
+                    separator: { type: 'string', description: 'Append separator.', default: '\n\n' },
+                    allowMultiple: { type: 'boolean', description: 'Allow multiple patch matches.', default: false },
+                    reason: { type: 'string', description: 'Why the file changed.' },
+                    dryRun: { type: 'boolean', description: 'Check whether the write would be allowed without writing.' },
+                    preflight: { type: 'boolean', description: 'Alias for dryRun.' }
+                  },
                 required: ['changeType', 'sourceId', 'path', 'reason']
               }
             }
