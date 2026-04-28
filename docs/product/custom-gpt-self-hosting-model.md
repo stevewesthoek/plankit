@@ -15,6 +15,8 @@ For v1.2.0-beta, there are two product modes:
 1. **BuildFlow Local** - the free GitHub path. Fully self-hosted. You own the local agent, web app, relay, and any endpoint or tunnel you choose.
 2. **BuildFlow Managed** - the future paid convenience path. BuildFlow operates the managed relay infrastructure.
 
+If you are using the free GitHub beta, start with **BuildFlow Local**. You do not need BuildFlow Managed to run BuildFlow locally or to use the dashboard at `http://127.0.0.1:3054/dashboard`.
+
 ## BuildFlow Local: fully self-hosted
 
 **Use this when:** you want the free GitHub version and want to keep everything under your control.
@@ -22,6 +24,7 @@ For v1.2.0-beta, there are two product modes:
 **Endpoint examples:**
 - `http://localhost:3054/api/openapi` for local-only use
 - `https://<your-domain>/api/openapi` for a tunnel, reverse proxy, or public domain you control
+- `https://buildflow.prochat.tools/api/openapi` is not the default free GitHub endpoint; it belongs to the managed path
 
 **Token:** your own `BUILDFLOW_ACTION_TOKEN` (generated locally, stored in `.env.local`)
 
@@ -31,6 +34,11 @@ For v1.2.0-beta, there are two product modes:
 - Custom GPT sends requests to your endpoint with your token.
 - Your local setup routes requests to the agent.
 - Results return to Custom GPT, and your data stays on your machine.
+
+**If ChatGPT needs to call back into your machine, the endpoint must be one you control**:
+- a user-owned HTTPS domain
+- a tunnel you run yourself
+- or a reverse proxy you operate locally
 
 **Setup:**
 ```bash
