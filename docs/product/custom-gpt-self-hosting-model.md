@@ -16,6 +16,7 @@ For v1.2.0-beta, there are two product modes:
 2. **BuildFlow Managed** - the future paid convenience path. BuildFlow operates the managed relay infrastructure.
 
 If you are using the free GitHub beta, start with **BuildFlow Local**. You do not need BuildFlow Managed to run BuildFlow locally or to use the dashboard at `http://127.0.0.1:3054/dashboard`.
+The free GitHub beta should be understood as: clone the repo, run BuildFlow Local, and use your own endpoint or tunnel if ChatGPT needs to call back into your machine.
 
 ## BuildFlow Local: fully self-hosted
 
