@@ -142,6 +142,8 @@ Recommended sequence:
 
 This is a documentation gate, not a requirement to mutate the current developer runtime.
 
+Fresh-clone runtime verification is blocked while the current BuildFlow Local web runtime occupies port 3054, unless an alternate-port mode is added and documented for the free beta path.
+
 ## Gate 6: GitHub and community readiness
 
 - [ ] GitHub repo description is clear and star-worthy.
