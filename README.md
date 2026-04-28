@@ -181,6 +181,14 @@ relay-agent:
 
 Quick Start
 
+If you are a new GitHub user trying BuildFlow Local for the public beta, use this path first:
+
+1. `pnpm install`
+2. `pnpm local:restart`
+3. Open `http://127.0.0.1:3054/dashboard`
+
+This is the default free/local path. BuildFlow Managed and `buildflow.prochat.tools` are separate, later SaaS paths and are not required for the public GitHub beta.
+
 1. Clone & install
 
 git clone https://github.com/stevewesthoek/buildflow
