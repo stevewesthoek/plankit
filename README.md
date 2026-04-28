@@ -16,6 +16,12 @@ Think in ChatGPT. Build anywhere.
 
 BuildFlow is a local-first, open-source planning and handoff layer for AI-native builders.
 
+For the public GitHub beta, start with the Local path and the beta release note:
+
+- Local quickstart: `pnpm install` -> `pnpm local:restart` -> `http://127.0.0.1:3054/dashboard`
+- Beta release note: [`docs/product/releases/buildflow-v1.2.0-beta.md`](docs/product/releases/buildflow-v1.2.0-beta.md)
+- Managed/SaaS is later and out of scope unless it directly blocks Local beta readiness.
+
 ## Current status
 
 BuildFlow v1.0 is the stable Custom GPT Actions baseline.
