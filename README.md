@@ -238,6 +238,7 @@ Either approach starts:
 Reliability rule for the web service:
 
 * For dashboard work, use `pnpm local:rebuild-web` when the local web server may already be running.
+* For throwaway-clone beta checks without relay startup, use `pnpm local:verify:dashboard-only`.
 * Never run `pnpm --dir apps/web build` while `pnpm --dir apps/web dev` is already running on port `3054`.
 * If you build manually, stop web on `3054` first, clear `apps/web/.next` only if stale, rebuild, restart web, then run `pnpm local:verify`.
 * Verify in this order before handing off:

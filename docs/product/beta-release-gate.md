@@ -153,6 +153,8 @@ LOCAL_DASHBOARD_BASE_URL=http://127.0.0.1:3154 LOCAL_AGENT_URL=http://127.0.0.1:
 
 Current blocker note: the repo still starts the relay through Docker Compose in the documented Local stack script, so a true no-Docker throwaway-clone verification path is not yet available from repo-local commands alone. A future implementation needs either a no-Docker relay path or a dashboard-only verification mode for throwaway clones.
 
+Dashboard-only throwaway-clone verification is now planned as `pnpm local:verify:dashboard-only`, which should prove `http://127.0.0.1:<WEB_PORT>/api/openapi` and `http://127.0.0.1:<WEB_PORT>/dashboard` without starting the relay.
+
 ## Gate 6: GitHub and community readiness
 
 - [ ] GitHub repo description is clear and star-worthy.

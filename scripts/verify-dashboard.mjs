@@ -6,6 +6,7 @@ import os from 'os'
 
 const BASE = process.env.LOCAL_DASHBOARD_BASE_URL || 'http://127.0.0.1:3054'
 const AGENT = process.env.LOCAL_AGENT_URL || 'http://127.0.0.1:3052'
+const DASHBOARD_ONLY = process.env.LOCAL_DASHBOARD_ONLY === 'true'
 const INDEX_STATE_PATH = path.join(os.homedir(), '.buildflow', 'index-state.json')
 
 function assert(condition, message) {
@@ -45,6 +46,19 @@ function writeJsonFile(filePath, value) {
 }
 
 async function main() {
+  const openapi = await requestJson(`${BASE}/api/openapi`)
+  assert(openapi.response.status === 200, 'dashboard openapi must be 200')
+  assert(typeof openapi.json.openapi === 'string' && openapi.json.openapi.startsWith('3.'), 'openapi version missing')
+
+  if (DASHBOARD_ONLY) {
+    const dashboardResponse = await fetch(`${BASE}/dashboard`)
+    const dashboardHtml = await dashboardResponse.text()
+    assert(dashboardResponse.status === 200, 'dashboard page must be 200')
+    assert(dashboardHtml.includes('<html') || dashboardHtml.includes('BuildFlow'), 'dashboard page markup missing')
+    console.log('Dashboard-only verification passed.')
+    return
+  }
+
   const sourceList = await requestJson(`${BASE}/api/agent/sources`)
   assert(sourceList.response.status === 200, 'dashboard sources must be 200')
   assert(Array.isArray(sourceList.json.sources), 'sources array missing')
