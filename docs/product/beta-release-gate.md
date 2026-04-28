@@ -5,6 +5,7 @@
 Working checklist for the public Free GitHub self-hosted beta.
 
 This document does not claim that v1.2.0-beta is complete. It defines the gate that must be satisfied before BuildFlow is marketed as a public beta.
+BuildFlow Local is the release target. BuildFlow Managed / SaaS work is out of scope here unless it directly blocks the Local beta.
 
 ## Release identity
 
@@ -40,22 +41,22 @@ The user should be able to:
 
 **Summary:**
 
-- **Preferred v1.2.0-beta path:** BuildFlow-managed relay at `https://buildflow.prochat.tools` handles Custom GPT → local agent routing
-  - User: Clone repo, generate token, import Custom GPT schema, paste token
-  - User data: Stays local; relay is only a passthrough
-  - No external tunnel, no Cloudflare/ngrok/Tailscale required for default path
+- **Preferred v1.2.0-beta path:** BuildFlow Local with a user-owned endpoint, tunnel, or domain
+  - User: Clone repo, generate token, start BuildFlow Local, import the schema that points at their own endpoint
+  - User data: Stays local; the user controls the endpoint and any tunnel or reverse proxy
+  - No BuildFlow Managed dependency for the free GitHub beta
   
 - **Fallback path:** User-managed HTTPS tunnel (Cloudflare/ngrok/Tailscale) for power users
   - Still supported and documented
   - Optional, not required
 
-- **Relay infrastructure:** Already implemented in `packages/bridge` with multi-user token-scoped routing
+- **Relay infrastructure:** Already implemented in `packages/bridge`
   - Device registration, WebSocket routing, action proxy, request audit
-  - Just needs to be deployed to public instance + documented
+  - Managed deployment is a later SaaS concern, not the Local beta default
 
-- **v1.2.0-beta blocker status:** NOT a blocker
-  - Managed relay enhances UX but is not required
-  - Can launch with user-managed tunnels and add relay post-release if needed
+- **v1.2.0-beta blocker status:** NOT a blocker for Local beta
+  - Managed relay is later and optional
+  - The free GitHub beta should launch based on Local-first docs and verified local runtime behavior
 
 Beta can launch with preferred managed relay path or fallback to user-managed tunnels.
 
