@@ -548,12 +548,18 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
       const stat = fs.statSync(validation.fullPath)
       const operation = recursive || stat.isDirectory() ? 'delete_directory' : 'delete_file'
       if (stat.isDirectory()) {
-        const { files, directories } = countRecursiveEntries(validation.fullPath)
-        if (!recursive && !onlyIfEmpty) {
-          if (!confirmOperation(request.body, resolvedSourceId, operation, validation.normalizedPath)) {
-            return reply.code(403).send(confirmationPayload(resolvedSourceId, operation, relPath, validation.normalizedPath, 'recursive_delete_requires_confirmation', 'This deletes a directory and its contents.', ''))
+        const directoryEmptyBefore = fs.readdirSync(validation.fullPath).length === 0
+        if (!recursive) {
+          if (!directoryEmptyBefore) {
+            return reply.code(409).send({ status: 'error', verified: false, code: 'DIRECTORY_NOT_EMPTY', sourceId: resolvedSourceId, path: relPath, requestedPath: relPath, normalizedPath: validation.normalizedPath, changeType: 'delete_directory', reason: 'directory_not_empty', hint: 'Use recursive:true with confirmation or empty the directory first.' })
           }
+          if (!confirmOperation(request.body, resolvedSourceId, 'rmdir', validation.normalizedPath)) {
+            return reply.code(403).send(confirmationPayload(resolvedSourceId, 'rmdir', relPath, validation.normalizedPath, 'confirmation_required_path', 'This empty directory removal is confirmation-gated.'))
+          }
+          fs.rmdirSync(validation.fullPath)
+          return { status: 'deleted', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: 'rmdir', operation: 'rmdir', verified: true, existsBefore: true, existsAfter: false, directoryEmptyBefore }
         }
+        const { files, directories } = countRecursiveEntries(validation.fullPath)
         if (!recursive && onlyIfEmpty && fs.readdirSync(validation.fullPath).length > 0) {
           return reply.code(409).send({ status: 'error', verified: false, code: 'DIRECTORY_NOT_EMPTY', sourceId: resolvedSourceId, path: relPath, requestedPath: relPath, normalizedPath: validation.normalizedPath, changeType: operation, reason: 'directory_not_empty', hint: 'Pass recursive:true with confirmation or delete the contents first.' })
         }
@@ -561,14 +567,14 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
           return reply.code(403).send(confirmationPayload(resolvedSourceId, operation, relPath, validation.normalizedPath, 'recursive_delete_requires_confirmation', 'This deletes a directory and its contents.'))
         }
         fs.rmSync(validation.fullPath, { recursive: true, force: false })
-        return { status: 'deleted', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: operation, verified: true, existsBefore: true, existsAfter: false, deletedFileCount: files, deletedDirectoryCount: directories }
+        return { status: 'deleted', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: operation, operation, verified: true, existsBefore: true, existsAfter: false, deletedFileCount: files, deletedDirectoryCount: directories }
       }
       if (!confirmOperation(request.body, resolvedSourceId, operation, validation.normalizedPath)) {
         const matchedConfirmationGlob = validation.policy.confirmationRequiredGlobs.find(pattern => pattern === relPath || relPath.startsWith(pattern.replace('/**', '')))
         return reply.code(403).send(confirmationPayload(resolvedSourceId, operation, relPath, validation.normalizedPath, 'confirmation_required_path', 'This deletes a protected path.', matchedConfirmationGlob))
       }
       fs.unlinkSync(validation.fullPath)
-      return { status: 'deleted', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: operation, verified: true, existsBefore: true, existsAfter: false }
+      return { status: 'deleted', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: operation, operation, verified: true, existsBefore: true, existsAfter: false }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }
@@ -659,7 +665,7 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
         return reply.code(403).send(confirmationPayload(resolvedSourceId, 'rmdir', relPath, validation.normalizedPath, 'confirmation_required_path', 'This empty directory removal is confirmation-gated.'))
       }
       fs.rmdirSync(validation.fullPath)
-      return { status: 'deleted', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: 'rmdir', verified: true, existsBefore: true, existsAfter: false, directoryEmptyBefore }
+      return { status: 'deleted', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: 'rmdir', operation: 'rmdir', verified: true, existsBefore: true, existsAfter: false, directoryEmptyBefore }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }

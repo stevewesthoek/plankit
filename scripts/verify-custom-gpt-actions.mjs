@@ -449,6 +449,44 @@ async function runActionSuite(baseUrl, label) {
   const mkdirDiskPath = path.resolve(ROOT, mkdirPath)
   if (fs.existsSync(mkdirDiskPath)) fs.rmSync(path.dirname(mkdirDiskPath), { recursive: true, force: true })
 
+  const rmdirEmptyPath = `.buildflow/gpt-contract-rmdir-empty-${label.toLowerCase()}-${Date.now()}`
+  fs.mkdirSync(path.resolve(ROOT, rmdirEmptyPath), { recursive: true })
+  const rmdirEmptyResult = await runStep('applyBuildFlowFileChange rmdir empty', () => requestJson(`${baseUrl}/api/actions/apply-file-change`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      changeType: 'rmdir',
+      sourceId: 'buildflow',
+      path: rmdirEmptyPath,
+      reason: 'Contract smoke test rmdir empty'
+    })
+  }))
+  assert(rmdirEmptyResult.response.status === 200, `${label}: rmdir empty must return 200`)
+  assert(rmdirEmptyResult.json.verified === true, `${label}: rmdir empty must return verified:true`)
+  assert(rmdirEmptyResult.json.changeType === 'rmdir' || rmdirEmptyResult.json.operation === 'rmdir', `${label}: rmdir empty must report rmdir`)
+  assert(rmdirEmptyResult.json.directoryEmptyBefore === true, `${label}: rmdir empty must report empty directory`)
+  assert(!fs.existsSync(path.resolve(ROOT, rmdirEmptyPath)), `${label}: rmdir empty directory cleanup failed`)
+
+  const rmdirNonEmptyPath = `.buildflow/gpt-contract-rmdir-nonempty-${label.toLowerCase()}-${Date.now()}`
+  const rmdirNonEmptyDir = path.resolve(ROOT, rmdirNonEmptyPath)
+  fs.mkdirSync(path.join(rmdirNonEmptyDir, 'child'), { recursive: true })
+  fs.writeFileSync(path.join(rmdirNonEmptyDir, 'child', 'note.txt'), 'non-empty', 'utf8')
+  const rmdirNonEmptyResult = await runStep('applyBuildFlowFileChange rmdir non-empty', () => requestRaw(`${baseUrl}/api/actions/apply-file-change`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      changeType: 'rmdir',
+      sourceId: 'buildflow',
+      path: rmdirNonEmptyPath,
+      reason: 'Contract smoke test rmdir non-empty'
+    })
+  }))
+  assert(rmdirNonEmptyResult.response.status === 409, `${label}: rmdir non-empty must return 409`)
+  const rmdirNonEmptyJson = parseJsonSafe(rmdirNonEmptyResult.text, 'rmdir non-empty')
+  assert(rmdirNonEmptyJson.code === 'DIRECTORY_NOT_EMPTY', `${label}: rmdir non-empty must return DIRECTORY_NOT_EMPTY`)
+  assert(fs.existsSync(rmdirNonEmptyDir), `${label}: rmdir non-empty directory should still exist`)
+  fs.rmSync(rmdirNonEmptyDir, { recursive: true, force: true })
+
   return { startedAt, finishedAt: Date.now(), steps }
 }
 
