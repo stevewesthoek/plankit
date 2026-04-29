@@ -162,6 +162,30 @@ function countLabel(count: number, singular: string, plural?: string): string {
   return `${count} ${count === 1 ? singular : plural || `${singular}s`}`
 }
 
+function createArtifactBlockedResponse(params: {
+  sourceId?: string
+  artifactPath: string
+  blocked: { code: string; message: string; userMessage: string; reason: string; hint: string }
+}) {
+  return {
+    status: 'error' as const,
+    resultStatus: 'error' as const,
+    allowed: false,
+    verified: false,
+    sourceId: params.sourceId || '',
+    path: params.artifactPath,
+    requestedPath: params.artifactPath,
+    normalizedPath: params.artifactPath,
+    sourceRootRelativePath: params.artifactPath,
+    changeType: 'create' as const,
+    requiresConfirmation: false,
+    matchedAllowGlob: undefined,
+    matchedBlockGlob: undefined,
+    matchedConfirmationGlob: undefined,
+    error: params.blocked
+  }
+}
+
 function matchesWildcard(pattern: string, value: string): boolean {
   const escaped = pattern
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
@@ -731,6 +755,34 @@ export async function dispatchBuildFlowArtifact(body: Record<string, unknown>, u
     filename: typeof body.filename === 'string' ? body.filename : undefined
   })
   if (body.dryRun === true || body.preflight === true) {
+    const sourceError = await requireExplicitSourceId(body, userToken)
+    if (sourceError) return sourceError
+    const sourceMap = await loadSourceMap(userToken)
+    const sourceId = typeof body.sourceId === 'string' ? body.sourceId : undefined
+    const source = sourceId ? sourceMap.map.get(sourceId) : sourceMap.sources[0]
+    const policy = (source?.writePolicy || {}) as WritePolicy
+    const content = typeof body.content === 'string' ? body.content : undefined
+    const contentRisk = classifyBlockedWrite(artifactPath, policy, content, 'create')
+    if (contentRisk && ['SECRET_PATTERN_BLOCKED', 'BINARY_WRITE_BLOCKED', 'FILE_TOO_LARGE'].includes(contentRisk.code)) {
+      return withActivity(createArtifactBlockedResponse({
+        sourceId: source?.id || sourceId || '',
+        artifactPath,
+        blocked: contentRisk
+      }), makeActivity({
+        operationId: 'writeBuildFlowArtifact',
+        phase: 'blocked',
+        actionLabel: 'Blocked unsafe artifact write',
+        userMessage: contentRisk.userMessage,
+        sourceId: source?.id || sourceId,
+        targetPaths: artifactPath ? [artifactPath] : [],
+        changedPaths: [],
+        readPaths: [],
+        riskLevel: 'high',
+        requiresConfirmation: false,
+        verified: false,
+        nextStep: contentRisk.hint || 'Use redacted placeholders or choose another file.'
+      }))
+    }
     const result = await preflightWrite({ ...body, path: artifactPath, changeType: 'create' }, userToken) as {
       status: 'allowed' | 'needs_confirmation' | 'error'
       allowed?: boolean

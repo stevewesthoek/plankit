@@ -73,6 +73,8 @@ The `writeBuildFlowArtifact` route now returns structured JSON for verified writ
 
 Artifact writes also now compose `folder` + `filename` into a repo-relative path before policy validation, so valid requests like `.buildflow` + `x-demo-buildflow-artifact.md` resolve correctly instead of falling through as an empty path.
 
+Artifact dry-run/preflight now checks content-safety patterns too, so secret-like artifact content is blocked before any write happens. Safe artifact writes remain verified normally.
+
 ## Future dashboard activity UI
 
 The dashboard-side live activity feed is planned as a future enhancement, not part of v1.2.13-beta.

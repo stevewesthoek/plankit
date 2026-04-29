@@ -51,6 +51,29 @@ assert.equal(composeArtifactRelativePath({ title: 'BuildFlow Action Demo Artifac
 assert.equal(composeArtifactRelativePath({ title: 'BuildFlow Action Demo Artifact', folder: '.buildflow' }), '.buildflow/buildflow-action-demo-artifact.md')
 assert.equal(composeArtifactRelativePath({ title: 'BuildFlow Action Demo Artifact', filename: 'x-demo-buildflow-artifact.md' }), '.buildflow/x-demo-buildflow-artifact.md')
 
+const artifactPath = composeArtifactRelativePath({ title: 'Blocked Secret Pattern Artifact Demo', folder: '.buildflow', filename: 'x-demo-blocked-secret-artifact.md' })
+const artifactSafePreflight = validateWriteTarget({ requestedPath: artifactPath, changeType: 'create', sourceRoot: root, content: 'Safe artifact content for policy checks.\n' })
+assert.equal(artifactSafePreflight.ok, true)
+if (artifactSafePreflight.ok) {
+  assert.equal(artifactSafePreflight.normalizedPath, '.buildflow/x-demo-blocked-secret-artifact.md')
+}
+
+const artifactSecretPattern = validateWriteTarget({ requestedPath: artifactPath, changeType: 'create', sourceRoot: root, content: 'github_pat_TEST_SHOULD_NOT_WRITE\n' })
+assert.equal(artifactSecretPattern.ok, false)
+if (!artifactSecretPattern.ok) {
+  assert.equal(artifactSecretPattern.error.code, 'SECRET_PATTERN_BLOCKED')
+  assert.equal(artifactSecretPattern.requestedPath, artifactPath)
+  assert.ok(artifactSecretPattern.normalizedPath.length > 0)
+}
+
+const artifactPrivateKey = validateWriteTarget({ requestedPath: artifactPath, changeType: 'create', sourceRoot: root, content: '-----BEGIN OPENSSH PRIVATE KEY-----\nTEST\n-----END OPENSSH PRIVATE KEY-----\n' })
+assert.equal(artifactPrivateKey.ok, false)
+if (!artifactPrivateKey.ok) {
+  assert.equal(artifactPrivateKey.error.code, 'SECRET_PATTERN_BLOCKED')
+  assert.equal(artifactPrivateKey.requestedPath, artifactPath)
+  assert.ok(artifactPrivateKey.normalizedPath.length > 0)
+}
+
 assert.equal(validatePath('.env.example').valid, true)
 assert.equal(validatePath('.gitignore').valid, true)
 assert.equal(validatePath('.github/workflows/example.yml').valid, true)

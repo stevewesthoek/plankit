@@ -436,6 +436,25 @@ async function runActionSuite(baseUrl, label) {
   assert(dryRunArtifact.json.allowed === true || dryRunArtifact.json.status === 'allowed', `${label}: dry-run artifact must be allowed`)
   assertActivity(dryRunArtifact.json.activity, 'writeBuildFlowArtifact', 'preflight', 'Preflighted repo artifact')
 
+  const dryRunArtifactBlocked = await runStep('writeBuildFlowArtifact dryRun blocked content', () => requestJson(`${baseUrl}/api/actions/write-artifact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sourceId: 'buildflow',
+      artifactType: 'general_doc',
+      title: `Blocked Secret Pattern Artifact Demo ${label} ${Date.now()}`,
+      content: 'github_pat_TEST_SHOULD_NOT_WRITE\n',
+      folder: '.buildflow',
+      filename: `blocked-${label.toLowerCase()}-${Date.now()}.md`,
+      dryRun: true
+    })
+  }))
+  assert(dryRunArtifactBlocked.response.status === 200, `${label}: blocked dry-run artifact must return 200`)
+  assert(dryRunArtifactBlocked.json.allowed === false, `${label}: blocked dry-run artifact must be disallowed`)
+  assert(dryRunArtifactBlocked.json.verified === false, `${label}: blocked dry-run artifact must not verify`)
+  assert(dryRunArtifactBlocked.json.error?.code === 'SECRET_PATTERN_BLOCKED', `${label}: blocked dry-run artifact must return SECRET_PATTERN_BLOCKED`)
+  assertActivity(dryRunArtifactBlocked.json.activity, 'writeBuildFlowArtifact', 'blocked', 'Blocked unsafe artifact write')
+
   const artifactTitle = `GPT contract smoke ${label} ${Date.now()}`
   const artifactContent = `Smoke test artifact for ${label}.`
   const writeArtifact = await runStep('writeBuildFlowArtifact', () => requestJson(`${baseUrl}/api/actions/write-artifact`, {
