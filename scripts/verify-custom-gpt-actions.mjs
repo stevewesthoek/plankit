@@ -187,6 +187,7 @@ function assertActivity(activity, operationId, phase, labelContains) {
 }
 
 function ensureInstructionAlignment(instructions) {
+  assert(instructions.includes('BuildFlow narration and activity feedback'), 'Instructions must mention BuildFlow narration and activity feedback')
   for (const operationId of EXPECTED_OPERATION_IDS) {
     assert(instructions.includes(operationId), `Instructions must mention ${operationId}`)
   }

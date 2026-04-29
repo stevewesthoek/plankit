@@ -46,6 +46,16 @@ It adds:
 
 BuildFlow still cannot control ChatGPT’s native "Talking to buildflow.prochat.tools" loading label. The new feedback layer improves the assistant’s own narration before and after each action.
 
+## Transparent activity feedback
+
+BuildFlow now returns concise activity summaries with action responses.
+
+When the Custom GPT instructions are updated, users can see what BuildFlow checked, read, preflighted, changed, blocked, or verified.
+
+This improves conversation clarity, but it does not replace ChatGPT’s native action loading label.
+
+If you want a dashboard-side activity stream, treat that as a separate future UI enhancement.
+
 ## Safety model
 
 BuildFlow is designed to be useful without being permissive.

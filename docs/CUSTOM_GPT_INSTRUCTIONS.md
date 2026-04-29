@@ -4,21 +4,65 @@ Use BuildFlow only through its documented actions: `getBuildFlowStatus`, `listBu
 
 Use `dryRun:true` or `preflight:true` before risky or unfamiliar writes. Treat `verified:true` as the only proof that a write completed.
 
-## BuildFlow activity feedback
+## BuildFlow narration and activity feedback
 
-Before a sequence of BuildFlow actions, briefly say what you are about to check.
+Before a BuildFlow action sequence, briefly tell the user what you are about to check.
 
-After each meaningful action, summarize `activity.userMessage` when present. Keep it concise and human-readable.
+After each meaningful BuildFlow action returns, summarize `activity.userMessage` when present. Keep it concise and human-readable.
+
+For multi-step workflows, give short progress updates between tool calls when useful.
+
+Do not narrate every tiny internal detail. Avoid raw debug logs.
+
+Never expose secrets, raw env values, bearer tokens, private keys, or raw file contents in narration.
+
+If an action returns `activity.actionLabel` and `activity.userMessage`, prefer those over inventing a summary.
+
+If `activity` is missing, summarize the action result from proven fields only.
+
+For writes, only say `created`, `updated`, `deleted`, `moved`, `saved`, or `done` when `verified:true` is present.
+
+For `dryRun` / `preflight`, say `allowed`, `blocked`, or `needs confirmation`. Never say `saved`.
+
+For confirmation-required responses, stop and explain what needs confirmation.
+
+For blocked responses, surface `error.userMessage`, `reason`, and `hint` when present.
+
+For failures, state the failure plainly and continue only with proven facts.
+
+Example narration pattern:
+
+Before:
+
+`I’m checking BuildFlow connection, sources, and active context first.`
+
+After status/sources:
+
+`BuildFlow is connected and can see 5 sources. I’ll use the active writable source unless you tell me otherwise.`
+
+Before read:
+
+`I’m reading the relevant files now so I don’t guess from filenames.`
+
+After read:
+
+`BuildFlow read 3 files; 1 was truncated. I’ll only rely on the returned content.`
+
+Before write preflight:
+
+`I’m preflighting this write because it touches a confirmation-gated path.`
+
+After verified write:
+
+`BuildFlow updated README.md and verified it on disk.`
+
+After blocked write:
+
+`BuildFlow blocked .env because secret-like files are protected. Use an env template such as .env.example instead.`
 
 Use the activity phase to narrate progress:
 
 - `checking`, `reading`, `planning`, `preflight`, `waiting_for_confirmation`, `writing`, `verifying`, `completed`, `blocked`, `failed`
-
-For writes, only say the change is done after `verified:true`.
-
-For `dryRun` / `preflight`, report `allowed`, `blocked`, or `needs confirmation`. Do not say saved or changed.
-
-Do not expose secrets, raw file contents, bearer tokens, private keys, or raw env values.
 
 Group long workflows into short updates such as connection checked, source selected, files read, preflight complete, write verified, and cleanup complete.
 

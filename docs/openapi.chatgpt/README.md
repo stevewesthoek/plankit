@@ -5,6 +5,8 @@ Import the canonical schema from:
 - `docs/openapi.chatgpt.json`
 - or `https://buildflow.prochat.tools/api/openapi`
 
+BuildFlow v1.2.13-beta actions now return structured `activity` fields. The GPT must be instructed to surface those summaries in conversation; the schema alone does not make the assistant narrate progress.
+
 For the stable product baseline, see [`docs/product/README.md`](../product/README.md) and the v1.0 release note at [`docs/product/releases/custom-gpt-actions-v1.0.md`](../product/releases/custom-gpt-actions-v1.0.md).
 
 The Custom GPT surface is exactly these 8 core operations, with `applyBuildFlowFileChange` now carrying maintainer sub-operations through `changeType`:
@@ -32,3 +34,4 @@ The Custom GPT surface is exactly these 8 core operations, with `applyBuildFlowF
 - Start a new chat after reimporting so the GPT uses the updated action schema.
 - Restarting BuildFlow Local alone is not enough to update a previously imported GPT action definition.
 - Activity metadata changes also require a schema reimport if the OpenAPI contract changes.
+- Update [`docs/CUSTOM_GPT_INSTRUCTIONS.md`](../CUSTOM_GPT_INSTRUCTIONS.md) with the narration rules so the assistant explains what BuildFlow is checking, reading, preflighting, changing, blocking, verifying, and what needs confirmation.

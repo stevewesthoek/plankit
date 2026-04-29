@@ -51,6 +51,22 @@ The token-based Custom GPT verifier is only run when `BUILDFLOW_ACTION_TOKEN` is
 
 When the OpenAPI action schema changes, reimport the GPT actions, save the GPT, and start a new chat. Restarting BuildFlow Local alone does not refresh an already imported action schema.
 
+## Custom GPT narration guidance
+
+BuildFlow backend actions now return structured activity metadata, but the Custom GPT still needs instruction to narrate it.
+
+The GPT should:
+
+- say what it is about to check before a tool sequence
+- summarize `activity.userMessage` after meaningful actions when present
+- keep progress updates concise and human-readable
+- avoid raw secrets, raw env values, bearer tokens, private keys, and raw file contents
+- only claim writes after `verified:true`
+- treat `dryRun` / `preflight` as allowed, blocked, or needs confirmation, not as saved changes
+- stop and ask for confirmation when the action requires it
+
+The dashboard activity stream, if added later, is separate from the GPT narration layer.
+
 ## Explicitly not changed
 
 - write safety boundaries
