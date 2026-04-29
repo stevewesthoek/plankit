@@ -54,7 +54,7 @@ When the Custom GPT instructions are updated, users can see what BuildFlow check
 
 This improves conversation clarity, but it does not replace ChatGPT’s native action loading label.
 
-If you want a dashboard-side activity stream, treat that as a separate future UI enhancement.
+If you want a dashboard-side activity stream, treat that as a separate future UI enhancement. That feed is planned in the roadmap, but it is not implemented yet.
 
 ## Safety model
 

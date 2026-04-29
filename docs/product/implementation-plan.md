@@ -258,6 +258,39 @@ Task prompts for Haiku or other lower models should follow this order:
 2. create or select a `DESIGN.md` for BuildFlow dashboard styling
 3. write a dashboard design brief in docs before code changes
 4. implement the above-the-fold dashboard shell only
+
+## Future dashboard activity feed
+
+Status: planned, not implemented yet.
+
+BuildFlow v1.2.13-beta already returns structured activity metadata from GPT-facing actions, and the Custom GPT narration guidance uses it. The next separate layer is a dashboard-side activity UI or live feed inside BuildFlow Local.
+
+### Proposed implementation shape
+
+- reuse the existing v1.2.13 activity metadata returned by BuildFlow actions
+- add a dashboard activity panel or tab in BuildFlow Local
+- store recent activity entries in safe local runtime memory or a safe local activity store
+- show timestamp, sourceId/source label, operationId, phase, actionLabel, userMessage, targetPaths/readPaths/changedPaths, verified status, risk level, and confirmation status
+- support filters for all, reads, writes, blocked, confirmation needed, verified, and errors
+- support clear/recent-session controls if appropriate
+- do not persist sensitive data by default
+- do not show raw file contents
+- consider a future “what happened?” summary that groups related actions
+
+### Safety rules
+
+- never display secrets, raw env values, bearer tokens, private keys, credentials, or raw file contents
+- redact or suppress secret-like paths or content
+- keep entries concise and user-facing
+- prefer safe labels and verification state over debug-style logs
+
+### Acceptance criteria
+
+- user can open the dashboard and see recent BuildFlow actions
+- user can see whether an action was reading, preflighting, writing, blocked, waiting for confirmation, or verified
+- user can see safe changed and read paths
+- secret-like values are never displayed
+- the UI makes it clear that Custom GPT narration is already complete, while the dashboard live feed remains future work
 5. add core status cards and next-action panel
 6. add empty, loading, error, and connected states
 7. add prompt handoff and execution packet preview areas

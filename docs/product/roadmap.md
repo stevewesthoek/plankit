@@ -13,6 +13,7 @@ BuildFlow is now building toward a public Free GitHub beta for BuildFlow Local w
 | v1.2.0-beta | BuildFlow Local public beta | marketable local-first beta | a new user can clone, run, connect sources, use the dashboard, connect the Custom GPT, and complete the local planning-to-handoff loop |
 | v1.2.0 | BuildFlow Local stable | polished self-hosted release | beta feedback resolved, docs complete, onboarding robust, release note published |
 | v1.3 | Free GitHub plus future Pro-ready improvements | post-beta product expansion | command bar, deeper dashboard flows, richer packet/plan UX where validated |
+| v1.2.13 dashboard activity UI | future Local dashboard enhancement | planned visibility layer | live or recent BuildFlow activity feed in the dashboard for safe, concise progress visibility |
 | BuildFlow Managed | paid hosted users | later commercial product | hosted onboarding, accounts, history, direct/managed execution convenience |
 | Team | teams/organizations | later collaboration product | shared workspaces, roles, review, team history |
 
@@ -164,6 +165,37 @@ Likely areas:
 - better local templates
 - more refined progress/timeline model
 - contributor-requested improvements from beta feedback
+
+## Dashboard activity UI / live BuildFlow activity feed
+
+Status: future / planned, not implemented yet.
+
+BuildFlow v1.2.13-beta completed the Custom GPT-side activity narration layer. The next visibility layer is a dashboard-side live or recent activity feed inside BuildFlow Local.
+
+The dashboard feed should help users understand what the Custom GPT is doing in connected repositories without depending on the browser console or the GPT action loading label.
+
+Expected feed items include:
+
+- connection checks
+- source selection
+- file inspection and search
+- file reads
+- `dryRun` / `preflight` checks
+- confirmation-required operations
+- verified writes
+- blocked unsafe operations
+- deletes, moves, renames, mkdir, and rmdir
+- cleanup results
+- errors and hints
+
+Safety requirements:
+
+- never show secrets, raw env values, bearer tokens, private keys, credentials, or raw file contents
+- show safe paths, operation labels, source labels, action status, verification state, and human-readable `userMessage`
+- redact or suppress secret-like paths or content
+- keep the UI concise and useful, not a noisy debug log
+
+This is a future dashboard layer, not a claim that the live activity feed already exists.
 
 ## BuildFlow Managed — Later paid hosted product
 

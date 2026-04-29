@@ -12,6 +12,7 @@
 - screenshots or demo path
 - issue/discussion templates
 - release gate checklist
+- future dashboard activity feed planning
 
 ## Stop Point
 - Do not expand Managed beyond the current staging validation loop.
@@ -21,3 +22,4 @@
 ## Intent
 - Make the free self-hosted path easy to understand, easy to run, and easy to share publicly.
 - Use Managed only as a separate future SaaS track.
+- Keep the dashboard activity feed as a future visibility enhancement after v1.2.13-beta Custom GPT narration.

@@ -67,6 +67,19 @@ The GPT should:
 
 The dashboard activity stream, if added later, is separate from the GPT narration layer.
 
+## Future dashboard activity UI
+
+The dashboard-side live activity feed is planned as a future enhancement, not part of v1.2.13-beta.
+
+This release completes the backend activity metadata and Custom GPT narration layer. The dashboard feed remains a separate next step for BuildFlow Local so users can see a live or recent activity stream inside the dashboard itself.
+
+Any future dashboard activity UI should keep the same safety rules:
+
+- no secrets, raw env values, bearer tokens, private keys, credentials, or raw file contents
+- safe paths and status labels only
+- concise, user-facing entries rather than debug logs
+- verification and confirmation state visible at a glance
+
 ## Explicitly not changed
 
 - write safety boundaries

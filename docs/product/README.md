@@ -36,3 +36,7 @@ The beta still blocks secrets, traversal, and generated/vendor output, and it ke
 
 - [`v1.0`](./releases/custom-gpt-actions-v1.0.md) is the stable Custom GPT Actions baseline.
 - [`v1.2.13-beta`](./releases/buildflow-v1.2.13-beta.md) is the current beta maintainer-release.
+
+## Planned visibility work
+
+- [`Dashboard activity UI / live BuildFlow activity feed`](./roadmap.md#dashboard-activity-ui--live-buildflow-activity-feed) is a future dashboard-side enhancement, not implemented yet.
