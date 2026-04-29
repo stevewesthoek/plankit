@@ -603,7 +603,8 @@ Keep all services healthy on ports 3052, 3053, 3054.`
               )}
 
               <div className="min-h-0 flex-1 overflow-hidden p-3 lg:p-4">
-                  {activeDashboardSection === 'overview' && (
+                {activeDashboardSection === 'overview' && (
+                  <div className="h-full min-h-0 overflow-y-auto pb-4">
                     <DashboardOverview
                       loading={loading}
                       agentConnected={agentConnected}
@@ -612,9 +613,11 @@ Keep all services healthy on ports 3052, 3053, 3054.`
                       onManageSources={() => setActiveDashboardSection('sources')}
                       onOpenHandoff={() => setActiveDashboardSection('handoff')}
                     />
-                  )}
+                  </div>
+                )}
 
-                  {activeDashboardSection === 'sources' && (
+                {activeDashboardSection === 'sources' && (
+                  <div className="h-full min-h-0 overflow-y-auto pb-4">
                     <KnowledgeSourcesPanel
                       sources={sources}
                       loading={loading}
@@ -639,23 +642,29 @@ Keep all services healthy on ports 3052, 3053, 3054.`
                       onToggleAddSourceForm={() => setShowAddSourceForm(prev => !prev)}
                       addSourceFormRef={addSourceFormRef}
                     />
-                  )}
+                  </div>
+                )}
 
-                  {activeDashboardSection === 'activity' && (
+                {activeDashboardSection === 'activity' && (
+                  <div className="h-full min-h-0 overflow-y-auto pb-4">
                     <DashboardActivityFeed
                       entries={activityFeedEntries}
                       emptyMessage="BuildFlow activity will appear here."
                     />
-                  )}
+                  </div>
+                )}
 
-                  {activeDashboardSection === 'plan' && (
+                {activeDashboardSection === 'plan' && (
+                  <div className="h-full min-h-0 overflow-y-auto pb-4">
                     <div className="space-y-4">
                       <PlanPlaceholderPanel sources={sources} agentConnected={agentConnected} />
                       <ExecutionFlowPreview />
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {activeDashboardSection === 'handoff' && (
+                {activeDashboardSection === 'handoff' && (
+                  <div className="h-full min-h-0 overflow-y-auto pb-4">
                     <ExecutionHandoffPanel
                       codexPrompt={codexPrompt}
                       claudeCodePrompt={claudeCodePrompt}
@@ -663,14 +672,17 @@ Keep all services healthy on ports 3052, 3053, 3054.`
                       onCopyCodex={() => copyToClipboard(codexPrompt, 'codex-copied')}
                       onCopyClaude={() => copyToClipboard(claudeCodePrompt, 'claude-copied')}
                     />
-                  )}
+                  </div>
+                )}
 
-                  {activeDashboardSection === 'settings' && (
-                    <div className="space-y-4 overflow-y-auto pr-1">
+                {activeDashboardSection === 'settings' && (
+                  <div className="h-full min-h-0 overflow-y-auto pr-1 pb-4">
+                    <div className="space-y-4">
                       <ActiveContextPanel activeMode={activeMode} writeMode={writeMode} activeSourceIds={activeSourceIds} onSetMode={handleSetMode} onSetWriteMode={handleWriteMode} />
                       <InfoPanels />
                     </div>
-                  )}
+                  </div>
+                )}
                 </div>
             </div>
           }

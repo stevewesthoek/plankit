@@ -206,16 +206,25 @@ export function KnowledgeSourcesPanel({
                         </div>
                       </div>
                       <details className="relative justify-self-end">
-                        <summary className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-[10px] border border-bf-border bg-bf-surface text-bf-muted transition-colors duration-150 hover:bg-bf-subtle hover:text-bf-text dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800">
+                        <summary
+                          className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-[10px] border border-bf-border bg-bf-surface text-bf-muted transition-colors duration-150 hover:bg-bf-subtle hover:text-bf-text dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                          onClick={event => event.stopPropagation()}
+                        >
                           <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.8} />
                         </summary>
-                        <div className="absolute right-0 top-9 z-10 w-44 overflow-hidden rounded-md border border-bf-border bg-bf-surface p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                        <div
+                          className="absolute right-0 top-9 z-10 w-44 overflow-hidden rounded-md border border-bf-border bg-bf-surface p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900"
+                          onClick={event => event.stopPropagation()}
+                        >
                           {actions.map(action => (
                             <button
                               key={action.label}
                               type="button"
                               disabled={action.disabled}
-                              onClick={action.onClick}
+                              onClick={event => {
+                                event.stopPropagation()
+                                action.onClick()
+                              }}
                               className="block w-full rounded-md px-3 py-2 text-left text-[12px] text-bf-text transition-colors duration-150 hover:bg-bf-subtle disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-200 dark:hover:bg-slate-800"
                             >
                               {action.label}
