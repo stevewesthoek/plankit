@@ -18,6 +18,7 @@ import { DashboardActivityFeed } from './components/DashboardActivityFeed'
 import { DashboardButton } from './components/ui/DashboardButton'
 import { DashboardPanel } from './components/ui/DashboardPanel'
 import { DashboardCodeText } from './components/ui/DashboardCodeText'
+import { buildClaudeHandoffPrompt, buildCodexHandoffPrompt } from './handoffPrompts'
 import type { DashboardActivityEvent, DashboardSection, DashboardSourceSnapshot } from './types'
 
 const TERMINAL_INDEX_STATUSES = new Set(['ready', 'failed', 'disabled'])
@@ -34,6 +35,28 @@ const SECTION_LABELS: Record<DashboardSection, string> = {
   plan: 'Plans',
   handoff: 'Handoff',
   settings: 'Settings'
+}
+
+const summarizeMode = (mode: ActiveSourcesMode) => {
+  switch (mode) {
+    case 'single':
+      return 'Single source'
+    case 'multi':
+      return 'Multi-source'
+    case 'all':
+      return 'All enabled'
+  }
+}
+
+const summarizeWriteMode = (mode: WriteMode) => {
+  switch (mode) {
+    case 'readOnly':
+      return 'Read only'
+    case 'artifactsOnly':
+      return 'Artifacts only'
+    case 'safeWrites':
+      return 'Safe writes'
+  }
 }
 
 const sleep = (ms: number) => new Promise(resolve => globalThis.setTimeout(resolve, ms))
@@ -193,25 +216,18 @@ export default function Dashboard() {
   const themeInitializedRef = useRef(false)
   const snapshotHydratedRef = useRef(false)
   const activityEventSeqRef = useRef(0)
+  const currentSectionLabel = SECTION_LABELS[activeDashboardSection]
 
-  const codexPrompt = `Review the current BuildFlow dashboard implementation.
-Check DESIGN.md for design system principles.
-Preserve all API routes, Custom GPT schema, and existing endpoint contracts.
-Follow the task order in docs/product/tasks/v1.2-dashboard.md.
-Implement the next scoped dashboard task with clean, minimal changes.
-Run type-check and build verification after changes.`
-
-  const claudeCodePrompt = `Work in the local BuildFlow repo.
-Follow DESIGN.md for design principles and brand consistency.
-Maintain the fixed-viewport dashboard architecture; no page scroll.
-Run pnpm type-check and pnpm build after changes.
-Verify OpenAPI health: curl http://127.0.0.1:3054/api/openapi
-Keep all services healthy on ports 3052, 3053, 3054.`
-
-  const copyToClipboard = async (text: string, status: 'codex-copied' | 'claude-copied') => {
+  const copyToClipboard = async (
+    text: string,
+    status: 'codex-copied' | 'claude-copied',
+    activityType: 'handoff-codex-copied' | 'handoff-claude-copied',
+    title: string
+  ) => {
     try {
       await navigator.clipboard.writeText(text)
       setHandoffCopyStatus(status)
+      recordActivity(activityType, title, `${currentSectionLabel} prompt copied to clipboard.`, 'good')
       setTimeout(() => setHandoffCopyStatus('idle'), 2000)
     } catch {
       setHandoffCopyStatus('error')
@@ -233,7 +249,6 @@ Keep all services healthy on ports 3052, 3053, 3054.`
     pushActivityEvent({ type, title, detail, tone })
   }
 
-  const selectedSource = selectedSourceId ? sources.find(source => source.id === selectedSourceId) || null : null
   const activityFeedEntries = activityEvents.length > 0
     ? activityEvents
     : buildActivityEntries({
@@ -246,6 +261,31 @@ Keep all services healthy on ports 3052, 3053, 3054.`
         activeMode,
         writeMode
       })
+  const activeSourceCount = activeSourceIds.length
+  const readySourceCount = sources.filter(source => source.enabled && source.indexStatus === 'ready').length
+  const selectedSource = selectedSourceId ? sources.find(source => source.id === selectedSourceId) ?? null : null
+  const codexPrompt = buildCodexHandoffPrompt({
+    sources,
+    selectedSource,
+    activeMode,
+    activeSourceIds,
+    writeMode,
+    agentConnected,
+    activityFeedEntries,
+    currentSection: currentSectionLabel
+  })
+  const claudeCodePrompt = buildClaudeHandoffPrompt({
+    sources,
+    selectedSource,
+    activeMode,
+    activeSourceIds,
+    writeMode,
+    agentConnected,
+    activityFeedEntries,
+    currentSection: currentSectionLabel
+  })
+  const handoffSelectedSourceLabel = selectedSource ? `${selectedSource.label} · ${selectedSource.id}` : null
+  const handoffSourceSummary = `${sources.length} sources · ${readySourceCount} ready · ${activeSourceCount} active`
 
   const fetchSources = async (options: FetchSourcesOptions = {}) => {
     const snapshot = snapshotRef.current
@@ -565,7 +605,6 @@ Keep all services healthy on ports 3052, 3053, 3054.`
     }
   }
 
-  const currentSectionLabel = SECTION_LABELS[activeDashboardSection]
   const topBarStatusText = mutationError || mutationNotice || error
 
   return (
@@ -669,8 +708,13 @@ Keep all services healthy on ports 3052, 3053, 3054.`
                       codexPrompt={codexPrompt}
                       claudeCodePrompt={claudeCodePrompt}
                       handoffCopyStatus={handoffCopyStatus}
-                      onCopyCodex={() => copyToClipboard(codexPrompt, 'codex-copied')}
-                      onCopyClaude={() => copyToClipboard(claudeCodePrompt, 'claude-copied')}
+                      currentSectionLabel={currentSectionLabel}
+                      selectedSourceLabel={handoffSelectedSourceLabel}
+                      activeModeLabel={summarizeMode(activeMode)}
+                      writeModeLabel={summarizeWriteMode(writeMode)}
+                      sourceSummaryLabel={handoffSourceSummary}
+                      onCopyCodex={() => copyToClipboard(codexPrompt, 'codex-copied', 'handoff-codex-copied', 'Codex handoff copied')}
+                      onCopyClaude={() => copyToClipboard(claudeCodePrompt, 'claude-copied', 'handoff-claude-copied', 'Claude handoff copied')}
                     />
                   </div>
                 )}
