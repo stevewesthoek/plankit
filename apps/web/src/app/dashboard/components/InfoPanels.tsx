@@ -1,7 +1,7 @@
 export function InfoPanels() {
   return (
     <>
-      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/50">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Execution modes</h2>
         <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">direct-agent: local agent (3052) | relay-agent: via relay (3053)</p>
         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
@@ -9,7 +9,7 @@ export function InfoPanels() {
         </p>
       </div>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/50">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Local setup</h2>
         <ul className="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-300">
           <li>• <code className="rounded bg-slate-100 px-1 dark:bg-slate-950">pnpm install</code></li>

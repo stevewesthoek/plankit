@@ -15,7 +15,7 @@ export function ExecutionHandoffPanel({
 }: ExecutionHandoffPanelProps) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
-      <div className="flex min-h-0 flex-1 flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+      <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/50">
         <h3 className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Codex CLI</h3>
         <div className="mb-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
           <p className="whitespace-pre-wrap font-mono text-xs text-slate-700 dark:text-slate-300">{codexPrompt}</p>
@@ -29,7 +29,7 @@ export function ExecutionHandoffPanel({
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+      <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/50">
         <h3 className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Claude Code</h3>
         <div className="mb-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
           <p className="whitespace-pre-wrap font-mono text-xs text-slate-700 dark:text-slate-300">{claudeCodePrompt}</p>

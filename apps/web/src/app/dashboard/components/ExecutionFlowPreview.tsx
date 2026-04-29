@@ -1,6 +1,6 @@
 export function ExecutionFlowPreview() {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/50">
       <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Execution states</h3>
       <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
         {[

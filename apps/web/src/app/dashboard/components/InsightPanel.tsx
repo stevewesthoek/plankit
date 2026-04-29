@@ -69,31 +69,31 @@ export function InsightPanel({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          <div className="space-y-3">
-            <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+          <div className="space-y-2.5">
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900/50">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Health</div>
-              <div className="mt-2 space-y-2 text-sm text-slate-700 dark:text-slate-300">
-                <div className="flex items-center justify-between gap-2">
+              <div className="mt-2 space-y-1.5 text-sm text-slate-700 dark:text-slate-300">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5 dark:border-slate-800">
                   <span>Agent</span>
                   <span className={agentConnected ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-400'}>{getAgentHealthLabel(agentConnected)}</span>
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5 dark:border-slate-800">
                   <span>Sources</span>
                   <span>{sourceCount}</span>
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5 dark:border-slate-800">
                   <span>Ready</span>
                   <span>{readyCount}</span>
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5 dark:border-slate-800">
                   <span>Indexing</span>
                   <span>{indexingCount}</span>
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5 dark:border-slate-800">
                   <span>Failed</span>
                   <span>{failedCount}</span>
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5 dark:border-slate-800">
                   <span>Context</span>
                   <span>{getActiveContextLabel(activeMode)}</span>
                 </div>
@@ -105,7 +105,7 @@ export function InsightPanel({
             </div>
 
             {error && (
-              <div className="rounded-3xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">Source refresh</div>
                 <p className="mt-1 text-xs leading-5">{error}</p>
               </div>
@@ -114,12 +114,12 @@ export function InsightPanel({
             {section === 'activity' ? (
               <div className="space-y-2">
                 {shownActivity.length === 0 ? (
-                  <div className="rounded-3xl border border-dashed border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
                     BuildFlow activity will appear here.
                   </div>
                 ) : (
                   shownActivity.map((entry, index) => (
-                    <div key={`${entry.title}-${index}`} className="rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+                    <div key={`${entry.title}-${index}`} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900/50">
                       <div className="text-sm font-medium text-slate-900 dark:text-slate-50">{entry.title}</div>
                       <div className={`mt-1 text-xs leading-5 ${toneClasses[entry.tone || 'neutral']}`}>{entry.detail}</div>
                     </div>
@@ -128,7 +128,7 @@ export function InsightPanel({
               </div>
             ) : (
               <>
-                <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900/50">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Workflow</div>
                   <div className="mt-2 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                     <p>{loading ? 'Loading current dashboard state.' : agentConnected ? 'Dashboard state is connected and ready.' : 'Use the last known state while the agent reconnects.'}</p>
@@ -136,11 +136,11 @@ export function InsightPanel({
                   </div>
                 </div>
 
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950/40">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Recent event</div>
                   <div className="mt-2 space-y-2">
                     {shownActivity.slice(0, 2).map((entry, index) => (
-                      <div key={`${entry.title}-${index}`} className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+                      <div key={`${entry.title}-${index}`} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
                         <div className="font-medium text-slate-900 dark:text-slate-50">{entry.title}</div>
                         <div className={`mt-1 leading-5 ${toneClasses[entry.tone || 'neutral']}`}>{entry.detail}</div>
                       </div>
@@ -151,7 +151,7 @@ export function InsightPanel({
               </>
             )}
 
-            <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-400">
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
               BuildFlow keeps source state visible even when refreshes fail temporarily.
             </div>
           </div>

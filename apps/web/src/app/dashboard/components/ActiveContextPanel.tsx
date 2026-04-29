@@ -16,7 +16,7 @@ export function ActiveContextPanel({
   onSetWriteMode
 }: ActiveContextPanelProps) {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/50">
       <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Active context</h2>
       <div className="mt-3 flex flex-wrap gap-1.5">
         <button className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${activeMode === 'single' ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`} onClick={() => onSetMode('single')} type="button">single</button>
