@@ -1,6 +1,5 @@
 import type { KnowledgeSource, WriteMode } from '@buildflow/shared'
 import {
-  getAgentHealthClassName,
   getAgentHealthLabel,
   getReadySourceCount,
   getWriteModeLabel
@@ -79,10 +78,6 @@ export function DashboardOverview({
         </div>
 
         <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-bf-muted dark:text-slate-300">
-          <span className="inline-flex items-center gap-1.5">
-            <DashboardStatusDot tone={agentConnected ? 'good' : 'neutral'} />
-            {agentConnected ? 'Agent connected' : 'Agent offline'}
-          </span>
           <span>{sourceSummary}</span>
           <span>{writeModeLabel}</span>
         </div>
