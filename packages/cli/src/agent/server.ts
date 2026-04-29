@@ -160,7 +160,7 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
         port,
         vaultPath: config?.vaultPath || 'not configured',
         indexedFiles: indexer.getDocs().length,
-        version: '1.2.12-beta'
+        version: '1.2.13-beta'
       }
   })
 

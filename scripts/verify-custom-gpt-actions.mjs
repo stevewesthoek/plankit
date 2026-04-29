@@ -148,6 +148,15 @@ function ensureSchemaRules(schema) {
   for (const key of ['from', 'to', 'recursive', 'onlyIfEmpty', 'overwrite', 'createParents', 'createParentDirectories', 'confirmedByUser', 'confirmationToken']) {
     assert(Object.prototype.hasOwnProperty.call(applyChangeSchema, key), `applyBuildFlowFileChange must accept ${key}`)
   }
+
+  const statusResponseSchema = schema.paths?.['/api/actions/status']?.get?.responses?.['200']?.content?.['application/json']?.schema || {}
+  assert(Object.prototype.hasOwnProperty.call(statusResponseSchema.properties || {}, 'activity'), 'status response must expose activity')
+  assert(Object.prototype.hasOwnProperty.call(schema.paths?.['/api/actions/sources']?.get?.responses?.['200']?.content?.['application/json']?.schema?.properties || {}, 'activity'), 'sources response must expose activity')
+  assert(Object.prototype.hasOwnProperty.call(schema.paths?.['/api/actions/context/active']?.get?.responses?.['200']?.content?.['application/json']?.schema?.properties || {}, 'activity'), 'active context response must expose activity')
+  assert(Object.prototype.hasOwnProperty.call(schema.paths?.['/api/actions/read-context']?.post?.responses?.['200']?.content?.['application/json']?.schema?.properties || {}, 'activity'), 'read-context response must expose activity')
+  assert(Object.prototype.hasOwnProperty.call(schema.paths?.['/api/actions/inspect']?.post?.responses?.['200']?.content?.['application/json']?.schema?.properties || {}, 'activity'), 'inspect response must expose activity')
+  assert(Object.prototype.hasOwnProperty.call(schema.paths?.['/api/actions/write-artifact']?.post?.responses?.['200']?.content?.['application/json']?.schema?.properties || {}, 'activity'), 'write-artifact response must expose activity')
+  assert(Object.prototype.hasOwnProperty.call(schema.paths?.['/api/actions/apply-file-change']?.post?.responses?.['200']?.content?.['application/json']?.schema?.properties || {}, 'activity'), 'apply-file-change response must expose activity')
 }
 
 function ensureConsequentialFlags(schema) {
@@ -164,6 +173,17 @@ function ensureConsequentialFlags(schema) {
   for (const op of collectOperations(schema)) {
     assert(op['x-openai-isConsequential'] === expectedFlags.get(op.operationId), `${op.operationId} consequential flag mismatch`)
   }
+}
+
+function assertActivity(activity, operationId, phase, labelContains) {
+  assert(activity && typeof activity === 'object', `${operationId}: activity missing`)
+  assert(activity.operationId === operationId, `${operationId}: activity.operationId mismatch`)
+  assert(activity.phase === phase, `${operationId}: activity.phase mismatch`)
+  assert(typeof activity.actionLabel === 'string' && activity.actionLabel.includes(labelContains), `${operationId}: activity.actionLabel mismatch`)
+  assert(typeof activity.userMessage === 'string' && activity.userMessage.length > 0, `${operationId}: activity.userMessage missing`)
+  assert(typeof activity.riskLevel === 'string', `${operationId}: activity.riskLevel missing`)
+  assert(typeof activity.requiresConfirmation === 'boolean', `${operationId}: activity.requiresConfirmation missing`)
+  assert(typeof activity.verified === 'boolean', `${operationId}: activity.verified missing`)
 }
 
 function ensureInstructionAlignment(instructions) {
@@ -244,11 +264,13 @@ async function runActionSuite(baseUrl, label) {
   const status = await runStep('getBuildFlowStatus', () => requestJson(`${baseUrl}/api/actions/status`, { method: 'GET' }))
   assert(status.response.status === 200, `${label}: status must return 200`)
   assert(status.json.connected === true || status.json.connected === false, `${label}: status connected missing`)
+  assertActivity(status.json.activity, 'getBuildFlowStatus', 'completed', 'Checked BuildFlow connection')
 
   const sources = await runStep('listBuildFlowSources', () => requestJson(`${baseUrl}/api/actions/sources`, { method: 'GET' }))
   assert(sources.response.status === 200, `${label}: sources must return 200`)
   assert(Array.isArray(sources.json.sources), `${label}: sources missing`)
   assert(sources.json.sources.every(source => typeof source.indexStatus === 'string' && typeof source.searchable === 'boolean'), `${label}: sources readiness fields missing`)
+  assertActivity(sources.json.activity, 'listBuildFlowSources', 'completed', 'Listed connected sources')
 
   const buildflowSource = sources.json.sources.find(source => source.id === 'buildflow')
   assert(buildflowSource, `${label}: buildflow source unavailable`)
@@ -273,6 +295,7 @@ async function runActionSuite(baseUrl, label) {
   const active = await runStep('getBuildFlowActiveContext', () => requestJson(`${baseUrl}/api/actions/context/active`, { method: 'GET' }))
   assert(active.response.status === 200, `${label}: active context must return 200`)
   assert(Array.isArray(active.json.activeSourceIds), `${label}: activeSourceIds missing`)
+  assertActivity(active.json.activity, 'getBuildFlowActiveContext', 'completed', 'Checked active source context')
 
   await runStep('setBuildFlowActiveContext missing contextMode', async () => {
     const result = await requestJson(`${baseUrl}/api/actions/context/active`, {
@@ -355,6 +378,7 @@ async function runActionSuite(baseUrl, label) {
   assert(setSingle.response.status === 200, `${label}: set active single should return 200`)
   assert(setSingle.json.contextMode === 'single', `${label}: single contextMode mismatch`)
   assert(Array.isArray(setSingle.json.activeSourceIds) && setSingle.json.activeSourceIds.length === 1, `${label}: single active ids mismatch`)
+  assertActivity(setSingle.json.activity, 'setBuildFlowActiveContext', 'completed', 'Updated active source context')
 
   const inspectList = await runStep('inspectBuildFlowContext list_files', () => requestJson(`${baseUrl}/api/actions/inspect`, {
     method: 'POST',
@@ -363,6 +387,7 @@ async function runActionSuite(baseUrl, label) {
   }))
   assert(inspectList.response.status === 200, `${label}: inspect list_files must return 200`)
   assert(Array.isArray(inspectList.json.entries) || Array.isArray(inspectList.json.results), `${label}: inspect list_files payload missing`)
+  assertActivity(inspectList.json.activity, 'inspectBuildFlowContext', 'completed', 'Inspected repository structure')
 
   const inspectSearch = await runStep('inspectBuildFlowContext search', () => requestJson(`${baseUrl}/api/actions/inspect`, {
     method: 'POST',
@@ -371,6 +396,7 @@ async function runActionSuite(baseUrl, label) {
   }))
   assert(inspectSearch.response.status === 200, `${label}: inspect search must return 200`)
   assert(Array.isArray(inspectSearch.json.results), `${label}: inspect search results missing`)
+  assertActivity(inspectSearch.json.activity, 'inspectBuildFlowContext', 'completed', 'Searched connected source')
 
   const readPaths = await runStep('readBuildFlowContext read_paths', () => requestJson(`${baseUrl}/api/actions/read-context`, {
     method: 'POST',
@@ -379,6 +405,7 @@ async function runActionSuite(baseUrl, label) {
   }))
   assert(readPaths.response.status === 200, `${label}: read_paths must return 200`)
   assert(Array.isArray(readPaths.json.files), `${label}: read_paths files missing`)
+  assertActivity(readPaths.json.activity, 'readBuildFlowContext', 'completed', 'Read repo files')
 
   const searchAndRead = await runStep('readBuildFlowContext search_and_read', () => requestJson(`${baseUrl}/api/actions/read-context`, {
     method: 'POST',
@@ -387,6 +414,7 @@ async function runActionSuite(baseUrl, label) {
   }))
   assert(searchAndRead.response.status === 200, `${label}: search_and_read must return 200`)
   assert(Array.isArray(searchAndRead.json.results), `${label}: search_and_read results missing`)
+  assertActivity(searchAndRead.json.activity, 'readBuildFlowContext', 'completed', 'Read repo files')
 
   const artifactTitle = `GPT contract smoke ${label} ${Date.now()}`
   const artifactContent = `Smoke test artifact for ${label}.`
@@ -403,6 +431,7 @@ async function runActionSuite(baseUrl, label) {
   assert(writeArtifact.response.status === 200, `${label}: write artifact must return 200`)
   assert(writeArtifact.json.verified === true, `${label}: write artifact must return verified:true`)
   assert(typeof writeArtifact.json.path === 'string' && writeArtifact.json.path.length > 0, `${label}: write artifact path missing`)
+  assertActivity(writeArtifact.json.activity, 'writeBuildFlowArtifact', 'completed', 'Verified repo artifact')
 
   const artifactDiskPath = path.resolve(ROOT, writeArtifact.json.path)
   assert(fs.existsSync(artifactDiskPath), `${label}: written artifact missing on disk`)
@@ -421,6 +450,7 @@ async function runActionSuite(baseUrl, label) {
   }))
   assert(applyChange.response.status === 200, `${label}: apply file change must return 200`)
   assert(applyChange.json.verified === true, `${label}: apply file change must return verified:true`)
+  assertActivity(applyChange.json.activity, 'applyBuildFlowFileChange', 'completed', 'Verified repo file change')
 
   const applyDiskPath = path.resolve(ROOT, applyChange.json.path || applyPath)
   assert(fs.existsSync(applyDiskPath), `${label}: applied file missing on disk`)
@@ -440,6 +470,7 @@ async function runActionSuite(baseUrl, label) {
   assert(mkdirResult.response.status === 200, `${label}: mkdir must return 200`)
   assert(mkdirResult.json.verified === true, `${label}: mkdir must return verified:true`)
   assert(fs.existsSync(path.resolve(ROOT, mkdirPath)), `${label}: mkdir target missing on disk`)
+  assertActivity(mkdirResult.json.activity, 'applyBuildFlowFileChange', 'completed', 'Created directory')
 
   for (const filePath of [artifactDiskPath, applyDiskPath]) {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
@@ -466,6 +497,7 @@ async function runActionSuite(baseUrl, label) {
   assert(rmdirEmptyResult.json.changeType === 'rmdir' || rmdirEmptyResult.json.operation === 'rmdir', `${label}: rmdir empty must report rmdir`)
   assert(rmdirEmptyResult.json.directoryEmptyBefore === true, `${label}: rmdir empty must report empty directory`)
   assert(!fs.existsSync(path.resolve(ROOT, rmdirEmptyPath)), `${label}: rmdir empty directory cleanup failed`)
+  assertActivity(rmdirEmptyResult.json.activity, 'applyBuildFlowFileChange', 'completed', 'Deleted empty directory')
 
   const rmdirNonEmptyPath = `.buildflow/gpt-contract-rmdir-nonempty-${label.toLowerCase()}-${Date.now()}`
   const rmdirNonEmptyDir = path.resolve(ROOT, rmdirNonEmptyPath)
@@ -486,6 +518,43 @@ async function runActionSuite(baseUrl, label) {
   assert(rmdirNonEmptyJson.code === 'DIRECTORY_NOT_EMPTY', `${label}: rmdir non-empty must return DIRECTORY_NOT_EMPTY`)
   assert(fs.existsSync(rmdirNonEmptyDir), `${label}: rmdir non-empty directory should still exist`)
   fs.rmSync(rmdirNonEmptyDir, { recursive: true, force: true })
+
+  const dryRunBlocked = await runStep('applyBuildFlowFileChange dryRun blocked', () => requestJson(`${baseUrl}/api/actions/apply-file-change`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      changeType: 'create',
+      sourceId: 'buildflow',
+      path: '.env',
+      content: 'SECRET=1',
+      dryRun: true,
+      reason: 'Contract smoke test blocked dryRun'
+    })
+  }))
+  assert(dryRunBlocked.response.status === 200, `${label}: blocked dryRun must return 200`)
+  assert(dryRunBlocked.json.allowed === false, `${label}: blocked dryRun must be disallowed`)
+  assert(dryRunBlocked.json.verified === false, `${label}: blocked dryRun must not verify`)
+  assert(dryRunBlocked.json.error?.code === 'SECRET_PATH_BLOCKED', `${label}: blocked dryRun must return SECRET_PATH_BLOCKED`)
+  assertActivity(dryRunBlocked.json.activity, 'applyBuildFlowFileChange', 'blocked', 'Blocked unsafe write')
+
+  const dryRunConfirmation = await runStep('applyBuildFlowFileChange dryRun confirmation', () => requestJson(`${baseUrl}/api/actions/apply-file-change`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      changeType: 'patch',
+      sourceId: 'buildflow',
+      path: 'package.json',
+      find: '"name": "buildflow"',
+      replace: '"name": "buildflow"',
+      dryRun: true,
+      reason: 'Contract smoke test confirmation'
+    })
+  }))
+  assert(dryRunConfirmation.response.status === 200, `${label}: confirmation dryRun must return 200`)
+  assert(dryRunConfirmation.json.requiresConfirmation === true, `${label}: confirmation dryRun must require confirmation`)
+  assert(dryRunConfirmation.json.verified === false, `${label}: confirmation dryRun must not verify`)
+  assert(dryRunConfirmation.json.confirmationToken, `${label}: confirmation dryRun must return token`)
+  assertActivity(dryRunConfirmation.json.activity, 'applyBuildFlowFileChange', 'waiting_for_confirmation', 'Needs confirmation')
 
   return { startedAt, finishedAt: Date.now(), steps }
 }

@@ -31,3 +31,4 @@ The Custom GPT surface is exactly these 8 core operations, with `applyBuildFlowF
 - If the root schema changes, re-import the Custom GPT actions in the OpenAI Custom GPT editor.
 - Start a new chat after reimporting so the GPT uses the updated action schema.
 - Restarting BuildFlow Local alone is not enough to update a previously imported GPT action definition.
+- Activity metadata changes also require a schema reimport if the OpenAPI contract changes.

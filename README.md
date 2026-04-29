@@ -27,25 +27,24 @@ For the public GitHub beta, use the Local path:
 
 The beta release note is here:
 
-- [`docs/product/releases/buildflow-v1.2.12-beta.md`](docs/product/releases/buildflow-v1.2.12-beta.md)
+- [`docs/product/releases/buildflow-v1.2.13-beta.md`](docs/product/releases/buildflow-v1.2.13-beta.md)
 
-## What v1.2.12-beta adds
+## What v1.2.13-beta adds
 
-BuildFlow v1.2.12-beta expands safe repo-local work beyond writes-only workflows.
+BuildFlow v1.2.13-beta adds user-facing activity feedback for Custom GPT conversations.
+
+It keeps the same safety model, but now returns structured progress metadata so the GPT can explain what BuildFlow checked, read, planned, blocked, wrote, or verified.
 
 It adds:
 
 - a repo-agnostic `repo_app_write` policy
-- normal app-code roots such as `src/**`, `app/**`, `components/**`, `lib/**`, `prisma/**`, `scripts/**`, `tests/**`, and related paths
-- a guarded `repo_app_maintainer` profile for safe delete, move, rename, mkdir, and rmdir tasks
-- confirmation-gated cleanup for protected files, workflows, lockfiles, and selected maintenance paths
-- consistent dotfile handling, including readable/writable env templates
-- generated artifact cleanup and binary asset deletion when policy allows it
-- `dryRun` / `preflight` checks before writing
-- structured write errors for blocked or confirmation-required paths
-- writable source metadata, including `writeProfile` and `writePolicy`
-- verified writes that only count as complete after `verified:true`
-- continued blocking for secrets, traversal, generated output, and other risky paths
+- a guarded `repo_app_maintainer` profile for delete, move, rename, mkdir, and rmdir tasks
+- activity metadata on status, source, read, inspect, and write actions
+- concise progress phases such as checking, reading, planning, preflight, writing, verifying, blocked, and completed
+- clear post-action summaries like "Write was verified" or "Needs confirmation"
+- the same `dryRun` / `preflight`, confirmation, and safety boundaries as before
+
+BuildFlow still cannot control ChatGPT’s native "Talking to buildflow.prochat.tools" loading label. The new feedback layer improves the assistant’s own narration before and after each action.
 
 ## Safety model
 
@@ -67,6 +66,8 @@ Some paths still require explicit confirmation, including lockfiles, GitHub work
 Delete, move, rename, mkdir, and rmdir are also policy-checked and confirmation-gated when appropriate.
 
 BuildFlow only treats a write as successful when the response includes `verified:true`.
+
+For the broader maintainer release history, see the current beta note at [`docs/product/releases/buildflow-v1.2.13-beta.md`](docs/product/releases/buildflow-v1.2.13-beta.md).
 
 ## How to use with a Custom GPT
 

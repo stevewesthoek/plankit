@@ -49,6 +49,91 @@
                     },
                     "sourcesAvailable": {
                       "type": "boolean"
+                    },
+                    "activity": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        },
+                        "operationId": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "checking",
+                            "reading",
+                            "planning",
+                            "preflight",
+                            "waiting_for_confirmation",
+                            "writing",
+                            "verifying",
+                            "completed",
+                            "blocked",
+                            "failed"
+                          ]
+                        },
+                        "actionLabel": {
+                          "type": "string"
+                        },
+                        "userMessage": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        },
+                        "sourceLabel": {
+                          "type": "string"
+                        },
+                        "targetPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "readPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "changedPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "riskLevel": {
+                          "type": "string",
+                          "enum": [
+                            "low",
+                            "medium",
+                            "high"
+                          ]
+                        },
+                        "requiresConfirmation": {
+                          "type": "boolean"
+                        },
+                        "verified": {
+                          "type": "boolean"
+                        },
+                        "nextStep": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "operationId",
+                        "phase",
+                        "actionLabel",
+                        "userMessage",
+                        "riskLevel",
+                        "requiresConfirmation",
+                        "verified"
+                      ]
                     }
                   },
                   "required": [
@@ -354,6 +439,91 @@
                           "searchable"
                         ]
                       }
+                    },
+                    "activity": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        },
+                        "operationId": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "checking",
+                            "reading",
+                            "planning",
+                            "preflight",
+                            "waiting_for_confirmation",
+                            "writing",
+                            "verifying",
+                            "completed",
+                            "blocked",
+                            "failed"
+                          ]
+                        },
+                        "actionLabel": {
+                          "type": "string"
+                        },
+                        "userMessage": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        },
+                        "sourceLabel": {
+                          "type": "string"
+                        },
+                        "targetPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "readPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "changedPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "riskLevel": {
+                          "type": "string",
+                          "enum": [
+                            "low",
+                            "medium",
+                            "high"
+                          ]
+                        },
+                        "requiresConfirmation": {
+                          "type": "boolean"
+                        },
+                        "verified": {
+                          "type": "boolean"
+                        },
+                        "nextStep": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "operationId",
+                        "phase",
+                        "actionLabel",
+                        "userMessage",
+                        "riskLevel",
+                        "requiresConfirmation",
+                        "verified"
+                      ]
                     }
                   },
                   "required": [
@@ -519,6 +689,243 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "active": {
+                            "type": "boolean"
+                          },
+                          "indexStatus": {
+                            "type": "string"
+                          },
+                          "searchable": {
+                            "type": "boolean"
+                          },
+                          "writable": {
+                            "type": "boolean"
+                          },
+                          "writeProfile": {
+                            "type": "string"
+                          },
+                          "writePolicy": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowCreate": {
+                                "type": "boolean"
+                              },
+                              "allowOverwrite": {
+                                "type": "boolean"
+                              },
+                              "allowAppend": {
+                                "type": "boolean"
+                              },
+                              "allowPatch": {
+                                "type": "boolean"
+                              },
+                              "allowCreateParentDirectories": {
+                                "type": "boolean"
+                              },
+                              "allowDelete": {
+                                "type": "boolean"
+                              },
+                              "allowDeleteDirectory": {
+                                "type": "boolean"
+                              },
+                              "allowMove": {
+                                "type": "boolean"
+                              },
+                              "allowRename": {
+                                "type": "boolean"
+                              },
+                              "allowMkdir": {
+                                "type": "boolean"
+                              },
+                              "allowRmdir": {
+                                "type": "boolean"
+                              },
+                              "recursiveDeleteRequiresConfirmation": {
+                                "type": "boolean"
+                              },
+                              "maxRecursiveDeleteFilesWithoutConfirmation": {
+                                "type": "integer"
+                              },
+                              "allowedRoots": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "blockedGlobs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "blockedWriteGlobs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "generatedDeleteAllowedGlobs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "confirmationRequiredGlobs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "protectedWriteGlobs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "protectedGlobs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "blockedContentPatterns": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "binaryWriteBlocked": {
+                                "type": "boolean"
+                              },
+                              "binaryDeleteAllowedWithConfirmation": {
+                                "type": "boolean"
+                              },
+                              "maxWriteBytes": {
+                                "type": "integer"
+                              },
+                              "maxCreateBytes": {
+                                "type": "integer"
+                              },
+                              "maxOverwriteBytes": {
+                                "type": "integer"
+                              },
+                              "maxPatchTargetBytes": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "enabled",
+                          "active",
+                          "indexStatus",
+                          "searchable"
+                        ]
+                      }
+                    },
+                    "activity": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        },
+                        "operationId": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "checking",
+                            "reading",
+                            "planning",
+                            "preflight",
+                            "waiting_for_confirmation",
+                            "writing",
+                            "verifying",
+                            "completed",
+                            "blocked",
+                            "failed"
+                          ]
+                        },
+                        "actionLabel": {
+                          "type": "string"
+                        },
+                        "userMessage": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        },
+                        "sourceLabel": {
+                          "type": "string"
+                        },
+                        "targetPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "readPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "changedPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "riskLevel": {
+                          "type": "string",
+                          "enum": [
+                            "low",
+                            "medium",
+                            "high"
+                          ]
+                        },
+                        "requiresConfirmation": {
+                          "type": "boolean"
+                        },
+                        "verified": {
+                          "type": "boolean"
+                        },
+                        "nextStep": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "operationId",
+                        "phase",
+                        "actionLabel",
+                        "userMessage",
+                        "riskLevel",
+                        "requiresConfirmation",
+                        "verified"
+                      ]
                     }
                   },
                   "required": [
@@ -888,6 +1295,91 @@
                           "searchable"
                         ]
                       }
+                    },
+                    "activity": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        },
+                        "operationId": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "checking",
+                            "reading",
+                            "planning",
+                            "preflight",
+                            "waiting_for_confirmation",
+                            "writing",
+                            "verifying",
+                            "completed",
+                            "blocked",
+                            "failed"
+                          ]
+                        },
+                        "actionLabel": {
+                          "type": "string"
+                        },
+                        "userMessage": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        },
+                        "sourceLabel": {
+                          "type": "string"
+                        },
+                        "targetPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "readPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "changedPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "riskLevel": {
+                          "type": "string",
+                          "enum": [
+                            "low",
+                            "medium",
+                            "high"
+                          ]
+                        },
+                        "requiresConfirmation": {
+                          "type": "boolean"
+                        },
+                        "verified": {
+                          "type": "boolean"
+                        },
+                        "nextStep": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "operationId",
+                        "phase",
+                        "actionLabel",
+                        "userMessage",
+                        "riskLevel",
+                        "requiresConfirmation",
+                        "verified"
+                      ]
                     }
                   },
                   "required": [
@@ -1112,6 +1604,91 @@
                         "type": "object",
                         "additionalProperties": true
                       }
+                    },
+                    "activity": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        },
+                        "operationId": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "checking",
+                            "reading",
+                            "planning",
+                            "preflight",
+                            "waiting_for_confirmation",
+                            "writing",
+                            "verifying",
+                            "completed",
+                            "blocked",
+                            "failed"
+                          ]
+                        },
+                        "actionLabel": {
+                          "type": "string"
+                        },
+                        "userMessage": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        },
+                        "sourceLabel": {
+                          "type": "string"
+                        },
+                        "targetPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "readPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "changedPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "riskLevel": {
+                          "type": "string",
+                          "enum": [
+                            "low",
+                            "medium",
+                            "high"
+                          ]
+                        },
+                        "requiresConfirmation": {
+                          "type": "boolean"
+                        },
+                        "verified": {
+                          "type": "boolean"
+                        },
+                        "nextStep": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "operationId",
+                        "phase",
+                        "actionLabel",
+                        "userMessage",
+                        "riskLevel",
+                        "requiresConfirmation",
+                        "verified"
+                      ]
                     }
                   }
                 }
@@ -1380,6 +1957,91 @@
                         "type": "object",
                         "additionalProperties": true
                       }
+                    },
+                    "activity": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        },
+                        "operationId": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "checking",
+                            "reading",
+                            "planning",
+                            "preflight",
+                            "waiting_for_confirmation",
+                            "writing",
+                            "verifying",
+                            "completed",
+                            "blocked",
+                            "failed"
+                          ]
+                        },
+                        "actionLabel": {
+                          "type": "string"
+                        },
+                        "userMessage": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        },
+                        "sourceLabel": {
+                          "type": "string"
+                        },
+                        "targetPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "readPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "changedPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "riskLevel": {
+                          "type": "string",
+                          "enum": [
+                            "low",
+                            "medium",
+                            "high"
+                          ]
+                        },
+                        "requiresConfirmation": {
+                          "type": "boolean"
+                        },
+                        "verified": {
+                          "type": "boolean"
+                        },
+                        "nextStep": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "operationId",
+                        "phase",
+                        "actionLabel",
+                        "userMessage",
+                        "riskLevel",
+                        "requiresConfirmation",
+                        "verified"
+                      ]
                     }
                   }
                 }
@@ -1661,6 +2323,91 @@
                     },
                     "deletedDirectoryCount": {
                       "type": "integer"
+                    },
+                    "activity": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        },
+                        "operationId": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "checking",
+                            "reading",
+                            "planning",
+                            "preflight",
+                            "waiting_for_confirmation",
+                            "writing",
+                            "verifying",
+                            "completed",
+                            "blocked",
+                            "failed"
+                          ]
+                        },
+                        "actionLabel": {
+                          "type": "string"
+                        },
+                        "userMessage": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        },
+                        "sourceLabel": {
+                          "type": "string"
+                        },
+                        "targetPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "readPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "changedPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "riskLevel": {
+                          "type": "string",
+                          "enum": [
+                            "low",
+                            "medium",
+                            "high"
+                          ]
+                        },
+                        "requiresConfirmation": {
+                          "type": "boolean"
+                        },
+                        "verified": {
+                          "type": "boolean"
+                        },
+                        "nextStep": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "operationId",
+                        "phase",
+                        "actionLabel",
+                        "userMessage",
+                        "riskLevel",
+                        "requiresConfirmation",
+                        "verified"
+                      ]
                     }
                   },
                   "required": [
@@ -1998,6 +2745,91 @@
                     },
                     "deletedDirectoryCount": {
                       "type": "integer"
+                    },
+                    "activity": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        },
+                        "operationId": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "checking",
+                            "reading",
+                            "planning",
+                            "preflight",
+                            "waiting_for_confirmation",
+                            "writing",
+                            "verifying",
+                            "completed",
+                            "blocked",
+                            "failed"
+                          ]
+                        },
+                        "actionLabel": {
+                          "type": "string"
+                        },
+                        "userMessage": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        },
+                        "sourceLabel": {
+                          "type": "string"
+                        },
+                        "targetPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "readPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "changedPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "riskLevel": {
+                          "type": "string",
+                          "enum": [
+                            "low",
+                            "medium",
+                            "high"
+                          ]
+                        },
+                        "requiresConfirmation": {
+                          "type": "boolean"
+                        },
+                        "verified": {
+                          "type": "boolean"
+                        },
+                        "nextStep": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "operationId",
+                        "phase",
+                        "actionLabel",
+                        "userMessage",
+                        "riskLevel",
+                        "requiresConfirmation",
+                        "verified"
+                      ]
                     }
                   },
                   "required": [

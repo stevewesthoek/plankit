@@ -89,5 +89,6 @@ assert(openapiSource.includes('preflight'))
 assert(openapiSource.includes('writable'))
 assert(openapiSource.includes('writePolicy'))
 assert(openapiSource.includes('writeProfile'))
+assert(openapiSource.includes('activitySchema'))
 
 console.log('write policy contract checks passed')

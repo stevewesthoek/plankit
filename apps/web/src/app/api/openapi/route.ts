@@ -66,6 +66,31 @@ const fileResultSchema = {
   required: ['path']
 }
 
+const activitySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    version: { type: 'string' },
+    operationId: { type: 'string' },
+    phase: {
+      type: 'string',
+      enum: ['starting', 'checking', 'reading', 'planning', 'preflight', 'waiting_for_confirmation', 'writing', 'verifying', 'completed', 'blocked', 'failed']
+    },
+    actionLabel: { type: 'string' },
+    userMessage: { type: 'string' },
+    sourceId: { type: 'string' },
+    sourceLabel: { type: 'string' },
+    targetPaths: { type: 'array', items: { type: 'string' } },
+    readPaths: { type: 'array', items: { type: 'string' } },
+    changedPaths: { type: 'array', items: { type: 'string' } },
+    riskLevel: { type: 'string', enum: ['low', 'medium', 'high'] },
+    requiresConfirmation: { type: 'boolean' },
+    verified: { type: 'boolean' },
+    nextStep: { type: 'string' }
+  },
+  required: ['version', 'operationId', 'phase', 'actionLabel', 'userMessage', 'riskLevel', 'requiresConfirmation', 'verified']
+}
+
 const writeResultSchema = {
   type: 'object',
   additionalProperties: false,
@@ -96,6 +121,7 @@ const writeResultSchema = {
     targetExistsAfter: { type: 'boolean' },
     deletedFileCount: { type: 'integer' },
     deletedDirectoryCount: { type: 'integer' },
+    activity: activitySchema
   },
   required: ['verified', 'verifiedAt', 'bytesOnDisk', 'contentHash', 'contentPreview']
 }
@@ -169,7 +195,8 @@ const openapi = {
                   properties: {
                     connected: { type: 'boolean' },
                     sourceCount: { type: 'integer' },
-                    sourcesAvailable: { type: 'boolean' }
+                    sourcesAvailable: { type: 'boolean' },
+                    activity: activitySchema
                   },
                   required: ['connected', 'sourceCount', 'sourcesAvailable']
                 }
@@ -200,7 +227,8 @@ const openapi = {
                     sources: {
                       type: 'array',
                       items: sourceItemSchema
-                    }
+                    },
+                    activity: activitySchema
                   },
                   required: ['status', 'sources']
                 }
@@ -229,7 +257,9 @@ const openapi = {
                   properties: {
                     status: { type: 'string', enum: ['ok'] },
                     contextMode: { type: 'string', enum: ['single', 'multi'] },
-                    activeSourceIds: { type: 'array', items: { type: 'string' } }
+                    activeSourceIds: { type: 'array', items: { type: 'string' } },
+                    sources: { type: 'array', items: sourceItemSchema },
+                    activity: activitySchema
                   },
                   required: ['status', 'contextMode', 'activeSourceIds']
                 }
@@ -283,7 +313,8 @@ const openapi = {
                     status: { type: 'string', enum: ['ok'] },
                     contextMode: { type: 'string', enum: ['single', 'multi'] },
                     activeSourceIds: { type: 'array', items: { type: 'string' } },
-                    sources: { type: 'array', items: sourceItemSchema }
+                    sources: { type: 'array', items: sourceItemSchema },
+                    activity: activitySchema
                   },
                   required: ['status', 'contextMode', 'activeSourceIds', 'sources']
                 }
@@ -333,7 +364,8 @@ const openapi = {
                   properties: {
                     mode: { type: 'string' },
                     entries: { type: 'array', items: { type: 'object', additionalProperties: true } },
-                    results: { type: 'array', items: { type: 'object', additionalProperties: true } }
+                    results: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                    activity: activitySchema
                   }
                 }
               }
@@ -386,7 +418,8 @@ const openapi = {
                   properties: {
                     mode: { type: 'string' },
                     files: { type: 'array', items: fileResultSchema },
-                    results: { type: 'array', items: { type: 'object', additionalProperties: true } }
+                    results: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                    activity: activitySchema
                   }
                 }
               }

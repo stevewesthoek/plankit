@@ -19,6 +19,38 @@ type NormalizedContextResult = {
   sources: NormalizedSource[]
 }
 
+type ActivityPhase =
+  | 'starting'
+  | 'checking'
+  | 'reading'
+  | 'planning'
+  | 'preflight'
+  | 'waiting_for_confirmation'
+  | 'writing'
+  | 'verifying'
+  | 'completed'
+  | 'blocked'
+  | 'failed'
+
+type ActivityRiskLevel = 'low' | 'medium' | 'high'
+
+type ActionActivity = {
+  version: '1.2.13-beta'
+  operationId: string
+  phase: ActivityPhase
+  actionLabel: string
+  userMessage: string
+  sourceId?: string
+  sourceLabel?: string
+  targetPaths?: string[]
+  readPaths?: string[]
+  changedPaths?: string[]
+  riskLevel: ActivityRiskLevel
+  requiresConfirmation: boolean
+  verified: boolean
+  nextStep?: string
+}
+
 type VerifiedWriteResult = {
   verified: true
   verifiedAt: string
@@ -57,6 +89,8 @@ type WritePolicy = {
   maxPatchTargetBytes?: number
 }
 
+type ActivityInput = Omit<ActionActivity, 'version'>
+
 const ENV_TEMPLATE_FILES = new Set([
   '.env.example',
   '.env.sample',
@@ -85,6 +119,28 @@ export async function requireExplicitSourceId(body: Record<string, unknown>, use
 
 function normalizePath(input: string): string {
   return input.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+/g, '/').trim()
+}
+
+function makeActivity(input: ActivityInput): ActionActivity {
+  return {
+    version: '1.2.13-beta',
+    ...input
+  }
+}
+
+function withActivity<T extends Record<string, unknown>>(result: T, activity: ActionActivity): T & { activity: ActionActivity } {
+  return { ...result, activity }
+}
+
+function summaryList(items: string[], limit = 3): string {
+  if (items.length === 0) return 'none'
+  const trimmed = items.slice(0, limit)
+  const suffix = items.length > limit ? ` and ${items.length - limit} more` : ''
+  return `${trimmed.join(', ')}${suffix}`
+}
+
+function countLabel(count: number, singular: string, plural?: string): string {
+  return `${count} ${count === 1 ? singular : plural || `${singular}s`}`
 }
 
 function matchesWildcard(pattern: string, value: string): boolean {
@@ -384,26 +440,50 @@ export async function listBuildFlowSources(userToken?: string) {
     headers['Authorization'] = `Bearer ${userToken}`
   }
   const sourcesPayload = await fetchJson('/api/sources/list', { method: 'GET', headers })
-  return {
+  const sources = normalizeSourcesList(sourcesPayload).map(source => ({
+    id: source.id,
+    label: source.label,
+    enabled: source.enabled,
+    active: source.active,
+    indexStatus: source.indexStatus ?? (source.searchable ? 'ready' : 'pending'),
+    searchable: source.searchable === true,
+    writable: source.writable === true,
+    writeProfile: source.writeProfile,
+    operations: ['create', 'patch', 'overwrite', 'append', 'deleteFile', 'deleteDirectory', 'move', 'rename', 'mkdir', 'rmdir'],
+    writePolicy: source.writePolicy
+  }))
+  return withActivity({
     status: 'ok' as const,
-    sources: normalizeSourcesList(sourcesPayload).map(source => ({
-      id: source.id,
-      label: source.label,
-      enabled: source.enabled,
-      active: source.active,
-      indexStatus: source.indexStatus ?? (source.searchable ? 'ready' : 'pending'),
-      searchable: source.searchable === true,
-      writable: source.writable === true,
-      writeProfile: source.writeProfile,
-      operations: ['create', 'patch', 'overwrite', 'append', 'deleteFile', 'deleteDirectory', 'move', 'rename', 'mkdir', 'rmdir'],
-      writePolicy: source.writePolicy
-    }))
-  }
+    sources
+  }, makeActivity({
+    operationId: 'listBuildFlowSources',
+    phase: 'completed',
+    actionLabel: 'Listed connected sources',
+    userMessage: `Found ${countLabel(sources.length, 'source')}. ${countLabel(sources.filter(source => source.enabled).length, 'source')} enabled; ${countLabel(sources.filter(source => source.searchable).length, 'source')} searchable; ${countLabel(sources.filter(source => source.writable).length, 'source')} writable.`,
+    riskLevel: 'low',
+    requiresConfirmation: false,
+    verified: true,
+    nextStep: 'Select a source and continue.'
+  }))
 }
 
 export async function getBuildFlowActiveContext(userToken?: string) {
   const activePayload = await executeAction('/api/get-active-sources', {}, userToken)
-  return normalizeActiveContext(activePayload)
+  const context = normalizeActiveContext(activePayload)
+  return withActivity(context, makeActivity({
+    operationId: 'getBuildFlowActiveContext',
+    phase: 'completed',
+    actionLabel: 'Checked active source context',
+    userMessage: context.activeSourceIds.length > 0
+      ? `Active context is ${context.contextMode}-source: ${summaryList(context.activeSourceIds)}.`
+      : 'No active source context is selected.',
+    sourceId: context.activeSourceIds[0],
+    targetPaths: context.activeSourceIds,
+    riskLevel: 'low',
+    requiresConfirmation: false,
+    verified: true,
+    nextStep: context.activeSourceIds.length > 0 ? 'Read or inspect the active source.' : 'Select one or more active sources.'
+  }))
 }
 
 export async function setBuildFlowActiveContext(body: Record<string, unknown>, userToken?: string) {
@@ -419,7 +499,19 @@ export async function setBuildFlowActiveContext(body: Record<string, unknown>, u
     headers['Authorization'] = `Bearer ${userToken}`
   }
   const sourcesPayload = await fetchJson('/api/sources/list', { method: 'GET', headers })
-  return normalizeContextResult(sourcesPayload, result)
+  const context = normalizeContextResult(sourcesPayload, result)
+  return withActivity(context, makeActivity({
+    operationId: 'setBuildFlowActiveContext',
+    phase: 'completed',
+    actionLabel: 'Updated active source context',
+    userMessage: `Active context is now ${context.contextMode}-source with ${countLabel(context.activeSourceIds.length, 'source')}.`,
+    sourceId: context.activeSourceIds[0],
+    targetPaths: context.activeSourceIds,
+    riskLevel: 'low',
+    requiresConfirmation: false,
+    verified: true,
+    nextStep: 'Inspect or read the selected sources.'
+  }))
 }
 
 export async function dispatchBuildFlowContext(body: Record<string, unknown>, userToken?: string) {
@@ -446,7 +538,23 @@ export async function dispatchBuildFlowInspect(body: Record<string, unknown>, us
     }
     if (Array.isArray(body.sourceIds)) payload.sourceIds = body.sourceIds
     if (typeof body.sourceId === 'string') payload.sourceId = body.sourceId
-    return executeAction('/api/list-files', payload, userToken)
+    const result = await executeAction('/api/list-files', payload, userToken)
+    const entries = Array.isArray((result as { entries?: unknown }).entries) ? (result as { entries: unknown[] }).entries : []
+    const pathList = entries
+      .map(entry => typeof entry === 'object' && entry !== null && typeof (entry as Record<string, unknown>).path === 'string' ? (entry as Record<string, unknown>).path as string : '')
+      .filter(Boolean)
+    return withActivity(result as Record<string, unknown>, makeActivity({
+      operationId: 'inspectBuildFlowContext',
+      phase: 'completed',
+      actionLabel: 'Inspected repository structure',
+      userMessage: `Found ${countLabel(entries.length, 'path')} under ${payload.path || 'the selected root'}.`,
+      sourceId: typeof body.sourceId === 'string' ? body.sourceId : undefined,
+      targetPaths: pathList.slice(0, 10),
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      verified: true,
+      nextStep: 'Read the most relevant files.'
+    }))
   }
   if (mode === 'search') {
     if (typeof body.query !== 'string' || !body.query) throw new Error('Missing query parameter')
@@ -456,7 +564,24 @@ export async function dispatchBuildFlowInspect(body: Record<string, unknown>, us
     }
     if (Array.isArray(body.sourceIds)) payload.sourceIds = body.sourceIds
     if (typeof body.sourceId === 'string') payload.sourceId = body.sourceId
-    return executeAction('/api/search', payload, userToken)
+    const result = await executeAction('/api/search', payload, userToken)
+    const results = Array.isArray((result as { results?: unknown }).results) ? (result as { results: unknown[] }).results : []
+    const paths = results
+      .map(entry => typeof entry === 'object' && entry !== null && typeof (entry as Record<string, unknown>).path === 'string' ? (entry as Record<string, unknown>).path as string : '')
+      .filter(Boolean)
+    return withActivity(result as Record<string, unknown>, makeActivity({
+      operationId: 'inspectBuildFlowContext',
+      phase: 'completed',
+      actionLabel: 'Searched connected source',
+      userMessage: `Found ${countLabel(results.length, 'match')} for "${body.query}".`,
+      sourceId: typeof body.sourceId === 'string' ? body.sourceId : undefined,
+      readPaths: paths.slice(0, 10),
+      targetPaths: paths.slice(0, 10),
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      verified: true,
+      nextStep: 'Read the matching files.'
+    }))
   }
   throw new Error('Invalid mode')
 }
@@ -472,10 +597,24 @@ export async function dispatchBuildFlowRead(body: Record<string, unknown>, userT
     if (Array.isArray(body.sourceIds)) payload.sourceIds = body.sourceIds
     if (typeof body.sourceId === 'string') payload.sourceId = body.sourceId
     const result = await executeAction('/api/read-files', payload, userToken)
-    return {
+    const files = Array.isArray((result as { files?: unknown }).files) ? (result as { files: Array<Record<string, unknown>> }).files : []
+    const truncatedCount = files.filter(file => typeof file.truncated === 'boolean' && file.truncated).length
+    return withActivity({
       mode: 'read_paths',
-      files: Array.isArray((result as { files?: unknown }).files) ? (result as { files: unknown[] }).files : []
-    }
+      files
+    }, makeActivity({
+      operationId: 'readBuildFlowContext',
+      phase: 'completed',
+      actionLabel: 'Read repo files',
+      userMessage: `Read ${countLabel(files.length, 'file')}${truncatedCount > 0 ? `; ${countLabel(truncatedCount, 'file')} truncated` : ''}.`,
+      sourceId: typeof body.sourceId === 'string' ? body.sourceId : undefined,
+      readPaths: files.map(file => typeof file.path === 'string' ? file.path : '').filter(Boolean).slice(0, 10),
+      targetPaths: files.map(file => typeof file.path === 'string' ? file.path : '').filter(Boolean).slice(0, 10),
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      verified: true,
+      nextStep: 'Review the returned file contents.'
+    }))
   }
   if (mode === 'search_and_read') {
     if (typeof body.query !== 'string' || !body.query) throw new Error('Missing query parameter')
@@ -526,7 +665,7 @@ export async function dispatchBuildFlowRead(body: Record<string, unknown>, userT
       if (key !== '::') fileMap.set(key, file)
     }
 
-    return {
+    return withActivity({
       mode: 'search_and_read',
       results: pathEntries.map(entry => {
         const candidates = [
@@ -549,25 +688,111 @@ export async function dispatchBuildFlowRead(body: Record<string, unknown>, userT
           modifiedAt: typeof match?.modifiedAt === 'string' ? match.modifiedAt : undefined
         }
       })
-    }
+    }, makeActivity({
+      operationId: 'readBuildFlowContext',
+      phase: 'completed',
+      actionLabel: 'Read repo files',
+      userMessage: `Found ${countLabel(pathEntries.length, 'matching file')} and read the available contents.`,
+      sourceId: typeof body.sourceId === 'string' ? body.sourceId : undefined,
+      readPaths: pathEntries.map(entry => entry.path).slice(0, 10),
+      targetPaths: pathEntries.map(entry => entry.path).slice(0, 10),
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      verified: true,
+      nextStep: 'Summarize the matching files.'
+    }))
   }
   throw new Error('Invalid mode')
 }
 
 export async function dispatchBuildFlowArtifact(body: Record<string, unknown>, userToken?: string) {
   if (body.dryRun === true || body.preflight === true) {
-    return preflightWrite({ ...body, changeType: 'create' }, userToken)
+    const result = await preflightWrite({ ...body, changeType: 'create' }, userToken) as {
+      status: 'allowed' | 'needs_confirmation' | 'error'
+      allowed?: boolean
+      verified: boolean
+      sourceId?: string
+      requestedPath?: string
+      normalizedPath?: string
+      requiresConfirmation?: boolean
+      error?: unknown
+    }
+    const isBlocked = result.status === 'error'
+    const isNeedsConfirmation = result.status === 'needs_confirmation'
+    return withActivity(result, makeActivity({
+      operationId: 'writeBuildFlowArtifact',
+      phase: isBlocked ? 'blocked' : isNeedsConfirmation ? 'waiting_for_confirmation' : 'preflight',
+      actionLabel: isBlocked ? 'Blocked unsafe artifact write' : isNeedsConfirmation ? 'Needs confirmation' : 'Preflighted repo artifact',
+      userMessage: isBlocked
+        ? String((result.error as Record<string, unknown>)?.userMessage || 'BuildFlow blocked this artifact write.')
+        : isNeedsConfirmation
+          ? 'BuildFlow needs confirmation before creating this artifact.'
+          : 'BuildFlow checked whether the artifact write is allowed.',
+      sourceId: typeof result.sourceId === 'string' ? result.sourceId : undefined,
+      targetPaths: typeof result.requestedPath === 'string' && result.requestedPath ? [result.requestedPath] : [],
+      changedPaths: [],
+      riskLevel: isBlocked ? 'high' : 'medium',
+      requiresConfirmation: Boolean(result.requiresConfirmation),
+      verified: false,
+      nextStep: isNeedsConfirmation ? 'Confirm the action and retry.' : isBlocked ? 'Choose an allowed path.' : 'Proceed if the preflight looks correct.'
+    }))
   }
   const sourceError = await requireExplicitSourceId(body, userToken)
   if (sourceError) return sourceError
   const result = await executeAction('/api/create-artifact', body, userToken)
   const verified = assertVerifiedWriteResult(result, 'writeBuildFlowArtifact')
-  return { ...result as Record<string, unknown>, ...verified }
+  const sourceId = typeof (result as Record<string, unknown>).sourceId === 'string' ? (result as Record<string, unknown>).sourceId as string : typeof body.sourceId === 'string' ? body.sourceId : undefined
+  const path = typeof (result as Record<string, unknown>).path === 'string' ? (result as Record<string, unknown>).path as string : typeof body.path === 'string' ? body.path : undefined
+  return withActivity({ ...result as Record<string, unknown>, ...verified }, makeActivity({
+    operationId: 'writeBuildFlowArtifact',
+    phase: 'completed',
+    actionLabel: 'Verified repo artifact',
+    userMessage: `BuildFlow created ${path || 'the artifact'} and verified it on disk.`,
+    sourceId,
+    targetPaths: path ? [path] : [],
+    changedPaths: path ? [path] : [],
+    riskLevel: 'low',
+    requiresConfirmation: false,
+    verified: true,
+    nextStep: 'Review the artifact or continue.'
+  }))
 }
 
 export async function dispatchBuildFlowFileChange(body: Record<string, unknown>, userToken?: string) {
   if (body.dryRun === true || body.preflight === true) {
-    return preflightWrite(body, userToken)
+    const result = await preflightWrite(body, userToken) as {
+      status: 'allowed' | 'needs_confirmation' | 'error'
+      allowed?: boolean
+      verified: boolean
+      sourceId?: string
+      requestedPath?: string
+      normalizedPath?: string
+      requiresConfirmation?: boolean
+      error?: unknown
+    }
+    const isBlocked = result.status === 'error'
+    const isNeedsConfirmation = result.status === 'needs_confirmation'
+    return withActivity(result, makeActivity({
+      operationId: 'applyBuildFlowFileChange',
+      phase: isBlocked ? 'blocked' : isNeedsConfirmation ? 'waiting_for_confirmation' : 'preflight',
+      actionLabel: isBlocked
+        ? 'Blocked unsafe write'
+        : isNeedsConfirmation
+          ? 'Needs confirmation'
+          : 'Preflighted repo file change',
+      userMessage: isBlocked
+        ? String((result.error as Record<string, unknown>)?.userMessage || 'BuildFlow blocked this file change.')
+        : isNeedsConfirmation
+          ? 'BuildFlow needs confirmation before making this change.'
+          : `BuildFlow verified that ${typeof result.requestedPath === 'string' ? result.requestedPath : 'this change'} is allowed.`,
+      sourceId: typeof result.sourceId === 'string' ? result.sourceId : undefined,
+      targetPaths: typeof result.normalizedPath === 'string' && result.normalizedPath ? [result.normalizedPath] : [],
+      changedPaths: [],
+      riskLevel: isBlocked ? 'high' : 'medium',
+      requiresConfirmation: Boolean(result.requiresConfirmation),
+      verified: false,
+      nextStep: isNeedsConfirmation ? 'Confirm the action and retry.' : isBlocked ? 'Choose an allowed path.' : 'Proceed if the preflight looks correct.'
+    }))
   }
   const sourceError = await requireExplicitSourceId(body, userToken)
   if (sourceError) return sourceError
@@ -584,7 +809,20 @@ export async function dispatchBuildFlowFileChange(body: Record<string, unknown>,
     payload.separator = body.separator ?? '\n\n'
     const result = await executeAction('/api/append-file', payload, userToken)
     const verified = assertVerifiedWriteResult(result, 'applyBuildFlowFileChange append')
-    return { ...(result as Record<string, unknown>), ...verified }
+    const path = typeof (result as Record<string, unknown>).path === 'string' ? (result as Record<string, unknown>).path as string : typeof body.path === 'string' ? body.path : undefined
+    return withActivity({ ...(result as Record<string, unknown>), ...verified }, makeActivity({
+      operationId: 'applyBuildFlowFileChange',
+      phase: 'completed',
+      actionLabel: 'Verified repo file change',
+      userMessage: `BuildFlow appended to ${path || 'the file'} and verified it on disk.`,
+      sourceId: typeof body.sourceId === 'string' ? body.sourceId : undefined,
+      targetPaths: path ? [path] : [],
+      changedPaths: path ? [path] : [],
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      verified: true,
+      nextStep: 'Review the file or continue.'
+    }))
   }
 
   if (changeType === 'create') {
@@ -592,7 +830,20 @@ export async function dispatchBuildFlowFileChange(body: Record<string, unknown>,
     payload.mode = 'createOnly'
     const result = await executeAction('/api/write-file', payload, userToken)
     const verified = assertVerifiedWriteResult(result, 'applyBuildFlowFileChange create')
-    return { ...(result as Record<string, unknown>), ...verified }
+    const path = typeof (result as Record<string, unknown>).path === 'string' ? (result as Record<string, unknown>).path as string : typeof body.path === 'string' ? body.path : undefined
+    return withActivity({ ...(result as Record<string, unknown>), ...verified }, makeActivity({
+      operationId: 'applyBuildFlowFileChange',
+      phase: 'completed',
+      actionLabel: 'Verified repo file change',
+      userMessage: `BuildFlow created ${path || 'the file'} and verified it on disk.`,
+      sourceId: typeof body.sourceId === 'string' ? body.sourceId : undefined,
+      targetPaths: path ? [path] : [],
+      changedPaths: path ? [path] : [],
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      verified: true,
+      nextStep: 'Review the file or continue.'
+    }))
   }
 
   if (changeType === 'overwrite') {
@@ -600,7 +851,20 @@ export async function dispatchBuildFlowFileChange(body: Record<string, unknown>,
     payload.mode = 'overwrite'
     const result = await executeAction('/api/write-file', payload, userToken)
     const verified = assertVerifiedWriteResult(result, 'applyBuildFlowFileChange overwrite')
-    return { ...(result as Record<string, unknown>), ...verified }
+    const path = typeof (result as Record<string, unknown>).path === 'string' ? (result as Record<string, unknown>).path as string : typeof body.path === 'string' ? body.path : undefined
+    return withActivity({ ...(result as Record<string, unknown>), ...verified }, makeActivity({
+      operationId: 'applyBuildFlowFileChange',
+      phase: 'completed',
+      actionLabel: 'Verified repo file change',
+      userMessage: `BuildFlow overwrote ${path || 'the file'} and verified it on disk.`,
+      sourceId: typeof body.sourceId === 'string' ? body.sourceId : undefined,
+      targetPaths: path ? [path] : [],
+      changedPaths: path ? [path] : [],
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      verified: true,
+      nextStep: 'Review the file or continue.'
+    }))
   }
 
   if (changeType === 'patch') {
@@ -609,7 +873,20 @@ export async function dispatchBuildFlowFileChange(body: Record<string, unknown>,
     payload.allowMultiple = body.allowMultiple ?? false
     const result = await executeAction('/api/patch-file', payload, userToken)
     const verified = assertVerifiedWriteResult(result, 'applyBuildFlowFileChange patch')
-    return { ...(result as Record<string, unknown>), ...verified }
+    const path = typeof (result as Record<string, unknown>).path === 'string' ? (result as Record<string, unknown>).path as string : typeof body.path === 'string' ? body.path : undefined
+    return withActivity({ ...(result as Record<string, unknown>), ...verified }, makeActivity({
+      operationId: 'applyBuildFlowFileChange',
+      phase: 'completed',
+      actionLabel: 'Verified repo file change',
+      userMessage: `BuildFlow patched ${path || 'the file'} and verified it on disk.`,
+      sourceId: typeof body.sourceId === 'string' ? body.sourceId : undefined,
+      targetPaths: path ? [path] : [],
+      changedPaths: path ? [path] : [],
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      verified: true,
+      nextStep: 'Review the file or continue.'
+    }))
   }
 
   if (changeType === 'delete_file' || changeType === 'delete_directory' || changeType === 'rmdir') {
@@ -617,7 +894,29 @@ export async function dispatchBuildFlowFileChange(body: Record<string, unknown>,
     payload.onlyIfEmpty = body.onlyIfEmpty !== false
     payload.confirmedByUser = body.confirmedByUser === true
     payload.confirmationToken = typeof body.confirmationToken === 'string' ? body.confirmationToken : undefined
-    return executeAction('/api/delete-file', payload, userToken)
+    const result = await executeAction('/api/delete-file', payload, userToken)
+    const deletedPath = typeof (result as Record<string, unknown>).path === 'string' ? (result as Record<string, unknown>).path as string : typeof body.path === 'string' ? body.path : undefined
+    return withActivity(result as Record<string, unknown>, makeActivity({
+      operationId: 'applyBuildFlowFileChange',
+      phase: 'completed',
+      actionLabel: changeType === 'rmdir'
+        ? 'Deleted empty directory'
+        : changeType === 'delete_directory'
+          ? 'Deleted directory'
+          : 'Deleted file',
+      userMessage: changeType === 'rmdir'
+        ? `BuildFlow deleted the empty directory ${deletedPath || 'target'} and verified it on disk.`
+        : changeType === 'delete_directory'
+          ? `BuildFlow deleted ${deletedPath || 'the directory'} and verified it on disk.`
+          : `BuildFlow deleted ${deletedPath || 'the file'} and verified it on disk.`,
+      sourceId: typeof body.sourceId === 'string' ? body.sourceId : undefined,
+      targetPaths: deletedPath ? [deletedPath] : [],
+      changedPaths: deletedPath ? [deletedPath] : [],
+      riskLevel: changeType === 'delete_file' ? 'medium' : 'high',
+      requiresConfirmation: false,
+      verified: true,
+      nextStep: 'Review the repo state or continue.'
+    }))
   }
 
   if (changeType === 'move' || changeType === 'rename') {
@@ -626,13 +925,42 @@ export async function dispatchBuildFlowFileChange(body: Record<string, unknown>,
     payload.createParents = body.createParents === true || body.createParentDirectories === true
     payload.confirmedByUser = body.confirmedByUser === true
     payload.confirmationToken = typeof body.confirmationToken === 'string' ? body.confirmationToken : undefined
-    return executeAction('/api/move-file', payload, userToken)
+    const result = await executeAction('/api/move-file', payload, userToken)
+    const from = typeof (result as Record<string, unknown>).from === 'string' ? (result as Record<string, unknown>).from as string : typeof body.path === 'string' ? body.path : undefined
+    const to = typeof (result as Record<string, unknown>).to === 'string' ? (result as Record<string, unknown>).to as string : typeof body.to === 'string' ? body.to : undefined
+    return withActivity(result as Record<string, unknown>, makeActivity({
+      operationId: 'applyBuildFlowFileChange',
+      phase: 'completed',
+      actionLabel: changeType === 'rename' ? 'Renamed repo file' : 'Moved repo file',
+      userMessage: `${changeType === 'rename' ? 'BuildFlow renamed' : 'BuildFlow moved'} ${from || 'the file'}${to ? ` to ${to}` : ''} and verified it on disk.`,
+      sourceId: typeof body.sourceId === 'string' ? body.sourceId : undefined,
+      targetPaths: [from, to].filter((path): path is string => typeof path === 'string' && path.length > 0),
+      changedPaths: [from, to].filter((path): path is string => typeof path === 'string' && path.length > 0),
+      riskLevel: 'medium',
+      requiresConfirmation: false,
+      verified: true,
+      nextStep: 'Review the moved file or continue.'
+    }))
   }
 
   if (changeType === 'mkdir') {
     payload.createParents = body.createParents === true || body.createParentDirectories === true
     payload.confirmedByUser = body.confirmedByUser === true
-    return executeAction('/api/mkdir', payload, userToken)
+    const result = await executeAction('/api/mkdir', payload, userToken)
+    const path = typeof (result as Record<string, unknown>).path === 'string' ? (result as Record<string, unknown>).path as string : typeof body.path === 'string' ? body.path : undefined
+    return withActivity(result as Record<string, unknown>, makeActivity({
+      operationId: 'applyBuildFlowFileChange',
+      phase: 'completed',
+      actionLabel: 'Created directory',
+      userMessage: `BuildFlow created ${path || 'the directory'} and verified it on disk.`,
+      sourceId: typeof body.sourceId === 'string' ? body.sourceId : undefined,
+      targetPaths: path ? [path] : [],
+      changedPaths: path ? [path] : [],
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      verified: true,
+      nextStep: 'Review the directory or continue.'
+    }))
   }
 
   throw new Error('Invalid changeType')
