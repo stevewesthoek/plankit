@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { checkActionAuth } from '@/lib/actionAuth'
 import { dispatchBuildFlowFileChange, unwrapActionError } from '@/lib/actions/gpt'
 
+function getSafeActionHttpStatus(error: unknown): number {
+  if (error && typeof error === 'object') {
+    const code = (error as { code?: unknown }).code
+    if (code === 'REQUIRES_EXPLICIT_CONFIRMATION') return 200
+    return 403
+  }
+  return 403
+}
+
 export async function POST(request: NextRequest) {
   const auth = checkActionAuth(request)
   if (!auth.valid) return auth.error
@@ -14,11 +23,12 @@ export async function POST(request: NextRequest) {
     }
     const data = await dispatchBuildFlowFileChange(body, auth.bearerToken)
     if ('error' in (data as Record<string, unknown>)) {
-      const payload = data as { error: unknown; status: number }
+      const payload = data as { error: unknown }
+      const status = getSafeActionHttpStatus(payload.error)
       if (payload.error && typeof payload.error === 'object') {
-        return NextResponse.json(payload.error, { status: payload.status })
+        return NextResponse.json(payload.error, { status })
       }
-      return NextResponse.json({ error: payload.error }, { status: payload.status })
+      return NextResponse.json({ error: payload.error }, { status })
     }
     if ((body.dryRun === true || body.preflight === true) && (data as { verified?: unknown }).verified === false) {
       return NextResponse.json(data)

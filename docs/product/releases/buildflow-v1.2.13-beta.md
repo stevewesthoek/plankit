@@ -67,6 +67,10 @@ The GPT should:
 
 The dashboard activity stream, if added later, is separate from the GPT narration layer.
 
+## Artifact write bug fix
+
+The `writeBuildFlowArtifact` route now returns structured JSON for verified writes, dry-run/preflight checks, blocked policy responses, and confirmation-required responses without passing invalid HTTP status values to `NextResponse.json`.
+
 ## Future dashboard activity UI
 
 The dashboard-side live activity feed is planned as a future enhancement, not part of v1.2.13-beta.

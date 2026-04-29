@@ -417,6 +417,25 @@ async function runActionSuite(baseUrl, label) {
   assert(Array.isArray(searchAndRead.json.results), `${label}: search_and_read results missing`)
   assertActivity(searchAndRead.json.activity, 'readBuildFlowContext', 'completed', 'Read repo files')
 
+  const dryRunArtifactTitle = `GPT contract dry-run ${label} ${Date.now()}`
+  const dryRunArtifact = await runStep('writeBuildFlowArtifact dryRun', () => requestJson(`${baseUrl}/api/actions/write-artifact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sourceId: 'buildflow',
+      artifactType: 'general_doc',
+      title: dryRunArtifactTitle,
+      content: `Dry-run artifact test for ${label}.`,
+      folder: '.buildflow',
+      filename: `dryrun-${label.toLowerCase()}-${Date.now()}.md`,
+      dryRun: true
+    })
+  }))
+  assert(dryRunArtifact.response.status === 200, `${label}: dry-run artifact must return 200`)
+  assert(dryRunArtifact.json.verified === false, `${label}: dry-run artifact must not verify`)
+  assert(dryRunArtifact.json.allowed === true || dryRunArtifact.json.status === 'allowed', `${label}: dry-run artifact must be allowed`)
+  assertActivity(dryRunArtifact.json.activity, 'writeBuildFlowArtifact', 'preflight', 'Preflighted repo artifact')
+
   const artifactTitle = `GPT contract smoke ${label} ${Date.now()}`
   const artifactContent = `Smoke test artifact for ${label}.`
   const writeArtifact = await runStep('writeBuildFlowArtifact', () => requestJson(`${baseUrl}/api/actions/write-artifact`, {
