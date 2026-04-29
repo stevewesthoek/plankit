@@ -8,18 +8,13 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
+    if (body.dryRun === true || body.preflight === true) {
+      const data = await dispatchBuildFlowFileChange(body, auth.bearerToken)
+      return NextResponse.json(data)
+    }
     if (body.dryRun !== true && body.preflight !== true) {
       const preflight = await dispatchBuildFlowFileChange({ ...body, dryRun: true }, auth.bearerToken)
-      if ('error' in (preflight as Record<string, unknown>)) {
-        const payload = preflight as { error: unknown; status: number }
-        if (payload.error && typeof payload.error === 'object') {
-          return NextResponse.json(payload.error, { status: payload.status })
-        }
-        return NextResponse.json({ error: payload.error }, { status: payload.status })
-      }
-      if ((preflight as { allowed?: unknown }).allowed === false) {
-        return NextResponse.json(preflight, { status: 403 })
-      }
+      return NextResponse.json(preflight)
     }
     const data = await dispatchBuildFlowFileChange(body, auth.bearerToken)
     if ('error' in (data as Record<string, unknown>)) {

@@ -333,6 +333,11 @@ function matchesGlob(pattern: string, value: string): boolean {
   return new RegExp(`^${escaped}$`, 'i').test(value)
 }
 
+function matchesGlobAny(patterns: string[] | undefined, value: string): boolean {
+  if (!Array.isArray(patterns)) return false
+  return patterns.some(pattern => matchesGlob(pattern, value))
+}
+
 function buildConfirmationError(reason: string, hint: string): WriteValidationError {
   return { code: 'REQUIRES_EXPLICIT_CONFIRMATION', message: 'This change requires explicit confirmation.', userMessage: 'BuildFlow needs explicit confirmation before making this change.', reason, hint, requiresConfirmation: true }
 }
@@ -381,7 +386,9 @@ export function validateWriteTarget(params: {
     return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: blocked.code, message: blocked.message, userMessage: blocked.message, reason: blocked.reason, hint: blocked.hint, requiresConfirmation: false } }
   }
 
-  if (!isWithinAllowedRoots(normalizedPath)) {
+  const deleteOperation = params.changeType === 'delete_file' || params.changeType === 'delete_directory' || params.changeType === 'rmdir'
+  const generatedDeleteAllowed = deleteOperation && matchesGlobAny(policy.generatedDeleteAllowedGlobs, normalizedPath)
+  if (!generatedDeleteAllowed && !isWithinAllowedRoots(normalizedPath)) {
     return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'PATH_NOT_ALLOWED', message: 'This path is blocked by the source write policy.', userMessage: 'BuildFlow can read this file, but the current write policy blocks changes to this path.', reason: 'path_not_allowed', hint: 'Choose an allowed repo-local path or update the source write policy.', requiresConfirmation: false } }
   }
 

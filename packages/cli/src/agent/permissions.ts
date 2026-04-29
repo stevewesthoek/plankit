@@ -1,14 +1,36 @@
 import { IGNORE_PATTERNS } from '@buildflow/shared'
 
+const ALLOWED_DOTFILE_READS = new Set([
+  '.env.example',
+  '.env.sample',
+  '.env.template',
+  '.env.local.example',
+  '.env.development.example',
+  '.env.production.example',
+  '.gitignore',
+  '.github',
+  '.buildflow'
+])
+
 export function isPathAllowed(relativePath: string): boolean {
   // Block path traversal attempts
   if (relativePath.includes('..') || relativePath.startsWith('/')) {
     return false
   }
 
-  // Block hidden files/folders
+  // Allow a narrow set of safe hidden files/folders for exact reads, but keep
+  // real secrets and VCS internals blocked.
   const parts = relativePath.split('/')
+  if (parts.some(part => part === '.git')) {
+    return false
+  }
+  if (/^\.env(\..*)?$/i.test(relativePath) && !ALLOWED_DOTFILE_READS.has(relativePath)) {
+    return false
+  }
   if (parts.some(part => part.startsWith('.'))) {
+    if (ALLOWED_DOTFILE_READS.has(parts[0]) || ALLOWED_DOTFILE_READS.has(relativePath)) {
+      return true
+    }
     return false
   }
 

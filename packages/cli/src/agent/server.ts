@@ -118,6 +118,16 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
     return { files, directories }
   }
 
+  const ensureParentDirectory = (targetPath: string, allowRecursive: boolean) => {
+    const parent = path.dirname(targetPath)
+    if (fs.existsSync(parent)) return true
+    if (allowRecursive) {
+      fs.mkdirSync(parent, { recursive: true })
+      return true
+    }
+    return false
+  }
+
   const rebuildIndexAndSearcher = async (): Promise<void> => {
     await indexer.buildIndex()
     reconcileIndexStateFromDocs(indexer.getDocs(), getSourcesSafe())
@@ -603,10 +613,25 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
         return structuredWriteError(reply, 403, { sourceId: resolvedSourceId, path: blocked.requestedPath, requestedPath: blocked.requestedPath, normalizedPath: blocked.normalizedPath, sourceRootRelativePath: blocked.sourceRootRelativePath, changeType: 'mkdir', error: { ...blocked.error, policy: blocked.policy } })
       }
       if (fs.existsSync(validation.fullPath)) return reply.code(409).send({ error: 'Target already exists' })
+      const allowRecursive = createParents || validation.policy.allowCreateParentDirectories
+      if (!ensureParentDirectory(validation.fullPath, allowRecursive)) {
+        return reply.code(409).send({
+          status: 'error',
+          verified: false,
+          code: 'PARENT_DIRECTORY_MISSING',
+          sourceId: resolvedSourceId,
+          path: relPath,
+          requestedPath: relPath,
+          normalizedPath: validation.normalizedPath,
+          changeType: 'mkdir',
+          reason: 'parent_directory_missing',
+          hint: 'Pass createParents:true to create the missing parent directories.'
+        })
+      }
       if (!confirmOperation(request.body, resolvedSourceId, 'mkdir', validation.normalizedPath)) {
         return reply.code(403).send(confirmationPayload(resolvedSourceId, 'mkdir', relPath, validation.normalizedPath, 'confirmation_required_path', 'This directory creation is confirmation-gated.'))
       }
-      fs.mkdirSync(validation.fullPath, { recursive: createParents })
+      fs.mkdirSync(validation.fullPath, { recursive: allowRecursive })
       return { status: 'created', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: 'mkdir', verified: true, existsAfter: true }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
@@ -626,14 +651,15 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
       }
       if (!fs.existsSync(validation.fullPath)) return reply.code(404).send({ error: 'Directory not found' })
       if (!fs.statSync(validation.fullPath).isDirectory()) return reply.code(400).send({ error: 'Not a directory' })
-      if (fs.readdirSync(validation.fullPath).length > 0 && !recursive && onlyIfEmpty) {
+      const directoryEmptyBefore = fs.readdirSync(validation.fullPath).length === 0
+      if (!directoryEmptyBefore) {
         return reply.code(409).send({ status: 'error', verified: false, code: 'DIRECTORY_NOT_EMPTY', sourceId: resolvedSourceId, path: relPath, requestedPath: relPath, normalizedPath: validation.normalizedPath, changeType: 'rmdir', reason: 'directory_not_empty', hint: 'Pass recursive:true with confirmation or empty the directory first.' })
       }
       if (!confirmOperation(request.body, resolvedSourceId, 'rmdir', validation.normalizedPath)) {
-        return reply.code(403).send(confirmationPayload(resolvedSourceId, 'rmdir', relPath, validation.normalizedPath, 'recursive_delete_requires_confirmation', 'This directory removal is confirmation-gated.'))
+        return reply.code(403).send(confirmationPayload(resolvedSourceId, 'rmdir', relPath, validation.normalizedPath, 'confirmation_required_path', 'This empty directory removal is confirmation-gated.'))
       }
-      fs.rmSync(validation.fullPath, { recursive: recursive || !onlyIfEmpty, force: false })
-      return { status: 'deleted', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: 'rmdir', verified: true, existsAfter: false }
+      fs.rmdirSync(validation.fullPath)
+      return { status: 'deleted', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: 'rmdir', verified: true, existsBefore: true, existsAfter: false, directoryEmptyBefore }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }
@@ -777,7 +803,7 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
         lastIndexedAt: source.lastIndexedAt,
         indexError: source.indexError,
         writable: source.enabled !== false,
-        writeProfile: 'repo_app_write',
+        writeProfile: 'repo_app_maintainer',
         writePolicy: getDefaultWritePolicy()
       }))
 

@@ -116,7 +116,7 @@ function isDependencyChange(content?: string): boolean {
   }
 }
 
-function classifyBlockedWrite(path: string, policy?: WritePolicy, content?: string) {
+function classifyBlockedWrite(path: string, policy?: WritePolicy, content?: string, changeType?: string) {
   const normalized = normalizePath(path)
   if (!normalized) {
     return { code: 'WRITE_PATH_BLOCKED', message: 'This path is blocked by the source write policy.', userMessage: 'BuildFlow can read this file, but it needs a valid repo-relative path to write it.', reason: 'empty_path', hint: 'Provide a repo-relative path like docs/README.md.' }
@@ -146,6 +146,9 @@ function classifyBlockedWrite(path: string, policy?: WritePolicy, content?: stri
     return { code: 'SECRET_PATH_BLOCKED', message: 'This path is blocked because it may contain secrets.', userMessage: 'BuildFlow will not write to secret-like files such as .env or private key paths.', reason: 'blocked_glob', hint: 'Use a docs or project note path instead.' }
   }
   if (matchesAny(policy?.blockedWriteGlobs, normalized)) {
+    if ((changeType === 'delete_file' || changeType === 'delete_directory' || changeType === 'rmdir') && matchesAny(policy?.generatedDeleteAllowedGlobs, normalized)) {
+      return null
+    }
     return { code: 'GENERATED_WRITE_BLOCKED', message: 'This path is blocked because it is generated output.', userMessage: 'BuildFlow will not write generated or build output files.', reason: 'generated_write_blocked', hint: 'Write to the source file or a repo note instead.' }
   }
   if (matchesAny(policy?.protectedGlobs, normalized)) {
@@ -331,12 +334,12 @@ async function preflightWrite(body: Record<string, unknown>, userToken?: string)
   const source = sourceId ? sourceMap.map.get(sourceId) : sourceMap.sources[0]
   const policy = (source?.writePolicy || {}) as WritePolicy
   const normalizedPath = normalizePath(path)
-  const blocked = classifyBlockedWrite(path, policy, typeof body.content === 'string' ? body.content : undefined)
+  const blocked = classifyBlockedWrite(path, policy, typeof body.content === 'string' ? body.content : undefined, changeType)
   const matchedAllowGlob = findMatchingGlob(policy?.allowedRoots, normalizedPath)
   const matchedBlockGlob = findMatchingGlob(policy?.blockedGlobs, normalizedPath) || findMatchingGlob(policy?.confirmationRequiredGlobs, normalizedPath) || findMatchingGlob(policy?.protectedGlobs, normalizedPath)
   if (blocked) {
     return {
-      status: blocked.code === 'REQUIRES_EXPLICIT_CONFIRMATION' ? 'needs_confirmation' as const : 'blocked' as const,
+      status: blocked.code === 'REQUIRES_EXPLICIT_CONFIRMATION' ? 'needs_confirmation' as const : 'error' as const,
       resultStatus: 'error' as const,
       allowed: false,
       verified: false,

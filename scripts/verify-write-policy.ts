@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { getDefaultWritePolicy, validateWriteTarget } from '../packages/cli/src/agent/safe-access'
+import { validatePath } from '../packages/cli/src/agent/permissions'
 
 const policy = getDefaultWritePolicy()
 assert.equal(policy.allowCreate, true)
@@ -43,6 +44,16 @@ const appSafe = validateWriteTarget({ requestedPath: 'src/lib/example.ts', chang
 assert.equal(appSafe.ok, true)
 const envTemplate = validateWriteTarget({ requestedPath: '.env.example', changeType: 'create', sourceRoot: root, content: 'API_KEY=<your-api-key>\n' })
 assert.equal(envTemplate.ok, true)
+
+assert.equal(validatePath('.env.example').valid, true)
+assert.equal(validatePath('.gitignore').valid, true)
+assert.equal(validatePath('.github/workflows/example.yml').valid, true)
+assert.equal(validatePath('.env').valid, false)
+assert.equal(validatePath('.git/config').valid, false)
+assert.equal(validatePath('.env.local').valid, false)
+
+const generatedDelete = validateWriteTarget({ requestedPath: 'tsconfig.tsbuildinfo', changeType: 'delete_file', sourceRoot: root })
+assert.equal(generatedDelete.ok, true)
 
 const blockedCases = [
   { requestedPath: '.env', code: 'SECRET_PATH_BLOCKED' },
