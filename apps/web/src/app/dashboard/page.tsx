@@ -18,6 +18,77 @@ import { InsightPanel } from './components/InsightPanel'
 
 const TERMINAL_INDEX_STATUSES = new Set(['ready', 'failed', 'disabled'])
 
+type FetchSourcesOptions = {
+  blocking?: boolean
+}
+
+type DashboardSourceSnapshot = {
+  sources: KnowledgeSource[]
+  activeMode: ActiveSourcesMode
+  activeSourceIds: string[]
+  writeMode: WriteMode
+  savedAt: string
+}
+
+const DASHBOARD_SOURCE_CACHE_KEY = 'buildflow-dashboard-source-snapshot'
+
+const sleep = (ms: number) => new Promise(resolve => globalThis.setTimeout(resolve, ms))
+
+const getAgentErrorMessage = (data: Record<string, unknown> | null | undefined, fallback: string) => {
+  const error = typeof data?.error === 'string' ? data.error : fallback
+  const detail = typeof data?.details === 'string' ? data.details : typeof data?.detail === 'string' ? data.detail : ''
+  return `${error}${detail ? ` ${detail}` : ''}`.trim()
+}
+
+const readSourceSnapshot = (): DashboardSourceSnapshot | null => {
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_SOURCE_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<DashboardSourceSnapshot>
+    if (!Array.isArray(parsed.sources)) return null
+    return {
+      sources: parsed.sources,
+      activeMode: parsed.activeMode || 'all',
+      activeSourceIds: Array.isArray(parsed.activeSourceIds) ? parsed.activeSourceIds : [],
+      writeMode: parsed.writeMode || 'safeWrites',
+      savedAt: parsed.savedAt || new Date(0).toISOString()
+    }
+  } catch {
+    return null
+  }
+}
+
+const writeSourceSnapshot = (snapshot: Omit<DashboardSourceSnapshot, 'savedAt'>) => {
+  try {
+    window.localStorage.setItem(DASHBOARD_SOURCE_CACHE_KEY, JSON.stringify({ ...snapshot, savedAt: new Date().toISOString() }))
+  } catch {
+    // Local storage is a convenience cache only. Ignore quota/private-mode failures.
+  }
+}
+
+const fetchJsonWithRetry = async (url: string, attempts = 3): Promise<{ response: Response; data: Record<string, unknown> }> => {
+  let lastError: unknown
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, { cache: 'no-store' })
+      const data = await response.json().catch(() => ({})) as Record<string, unknown>
+      if ([502, 503, 504].includes(response.status) && attempt < attempts) {
+        await sleep(350 * attempt)
+        continue
+      }
+      return { response, data }
+    } catch (err) {
+      lastError = err
+      if (attempt < attempts) {
+        await sleep(350 * attempt)
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError))
+}
+
 export default function Dashboard() {
   const [sources, setSources] = useState<KnowledgeSource[]>([])
   const [loading, setLoading] = useState(true)
@@ -38,7 +109,9 @@ export default function Dashboard() {
   const [activeDashboardSection, setActiveDashboardSection] = useState<DashboardSection>('overview')
 
   const addSourceFormRef = useRef<HTMLFormElement>(null)
+  const snapshotRef = useRef<DashboardSourceSnapshot | null>(null)
   const themeInitializedRef = useRef(false)
+  const snapshotHydratedRef = useRef(false)
 
   const codexPrompt = `Review the current BuildFlow dashboard implementation.
 Check DESIGN.md for design system principles.
@@ -65,7 +138,8 @@ Keep all services healthy on ports 3052, 3053, 3054.`
     }
   }
 
-  const fetchSources = async () => {
+  const fetchSources = async (options: FetchSourcesOptions = {}) => {
+    const blocking = options.blocking ?? (!snapshotRef.current && sources.length === 0)
     let fetchedSources: KnowledgeSource[] = sources
     let fetchedActiveMode: ActiveSourcesMode = activeMode
     let fetchedActiveIds: string[] = activeSourceIds
@@ -73,44 +147,49 @@ Keep all services healthy on ports 3052, 3053, 3054.`
     try {
       setError(null)
       setLoadErrorDetail(null)
-      const response = await fetch('/api/agent/sources', { cache: 'no-store' })
-      const data = await response.json().catch(() => ({}))
+      const { response, data } = await fetchJsonWithRetry('/api/agent/sources')
       if (!response.ok) {
-        const detail = data?.details ? ` ${data.details}` : data?.detail ? ` ${data.detail}` : ''
-        throw new Error(`${data?.error || `Failed to fetch sources: ${response.status}`}${detail}`.trim())
+        throw new Error(getAgentErrorMessage(data, `Failed to fetch sources: ${response.status}`))
       }
 
-      fetchedSources = data.sources || []
+      fetchedSources = Array.isArray(data.sources) ? data.sources as KnowledgeSource[] : []
       setSources(fetchedSources)
       setAgentConnected(true)
-      const activeResponse = await fetch('/api/agent/active-sources', { cache: 'no-store' })
-      const activeData = await activeResponse.json().catch(() => ({}))
+      const { response: activeResponse, data: activeData } = await fetchJsonWithRetry('/api/agent/active-sources')
       if (!activeResponse.ok) {
-        const detail = activeData?.details ? ` ${activeData.details}` : activeData?.detail ? ` ${activeData.detail}` : ''
-        setLoadErrorDetail(`${activeData?.error || `Failed to fetch active sources: ${activeResponse.status}`}${detail}`.trim())
-        setActiveMode('all')
-        setActiveSourceIds([])
+        setMutationNotice(getAgentErrorMessage(activeData, `Active source state was not refreshed: ${activeResponse.status}`))
       } else {
-        fetchedActiveMode = activeData.mode || 'all'
-        fetchedActiveIds = activeData.activeSourceIds || []
+        fetchedActiveMode = (activeData.mode as ActiveSourcesMode) || 'all'
+        fetchedActiveIds = Array.isArray(activeData.activeSourceIds) ? activeData.activeSourceIds as string[] : []
         setActiveMode(fetchedActiveMode)
         setActiveSourceIds(fetchedActiveIds)
       }
-      const writeResponse = await fetch('/api/agent/write-mode', { cache: 'no-store' })
-      const writeData = await writeResponse.json().catch(() => ({}))
+      const { response: writeResponse, data: writeData } = await fetchJsonWithRetry('/api/agent/write-mode')
       if (!writeResponse.ok) {
-        const detail = writeData?.details ? ` ${writeData.details}` : writeData?.detail ? ` ${writeData.detail}` : ''
-        setLoadErrorDetail(`${writeData?.error || `Failed to fetch write mode: ${writeResponse.status}`}${detail}`.trim())
-        fetchedWriteMode = 'safeWrites'
-        setWriteMode(fetchedWriteMode)
+        setMutationNotice(getAgentErrorMessage(writeData, `Write mode was not refreshed: ${writeResponse.status}`))
       } else {
-        fetchedWriteMode = writeData.writeMode || 'safeWrites'
+        fetchedWriteMode = (writeData.writeMode as WriteMode) || 'safeWrites'
         setWriteMode(fetchedWriteMode)
       }
+      writeSourceSnapshot({
+        sources: fetchedSources,
+        activeMode: fetchedActiveMode,
+        activeSourceIds: fetchedActiveIds,
+        writeMode: fetchedWriteMode
+      })
       setAgentConnected(true)
+      return true
     } catch (err) {
-      setLoadErrorDetail(String(err))
-      setError('Unable to load sources')
+      const message = err instanceof Error ? err.message : String(err)
+      setLoadErrorDetail(message)
+      if (blocking && !snapshotRef.current) {
+        setError('Unable to load sources')
+      } else {
+        setError(null)
+        setMutationNotice(
+          `BuildFlow agent was briefly unavailable while refreshing source state. Retry refresh if this does not update. ${message}`
+        )
+      }
       if (fetchedSources.length > 0) {
         setSources(fetchedSources)
       }
@@ -118,6 +197,7 @@ Keep all services healthy on ports 3052, 3053, 3054.`
       setActiveSourceIds(fetchedActiveIds)
       setWriteMode(fetchedWriteMode)
       setAgentConnected(false)
+      return false
     } finally {
       setLoading(false)
     }
@@ -131,7 +211,23 @@ Keep all services healthy on ports 3052, 3053, 3054.`
   }
 
   useEffect(() => {
-    fetchSources()
+    if (snapshotHydratedRef.current) return
+    snapshotHydratedRef.current = true
+
+    const snapshot = readSourceSnapshot()
+    snapshotRef.current = snapshot
+    if (snapshot) {
+      setSources(snapshot.sources)
+      setActiveMode(snapshot.activeMode)
+      setActiveSourceIds(snapshot.activeSourceIds)
+      setWriteMode(snapshot.writeMode)
+      setAgentConnected(true)
+      setError(null)
+      setLoadErrorDetail(null)
+      setLoading(false)
+    }
+
+    void fetchSources({ blocking: !snapshot })
   }, [])
 
   useEffect(() => {
@@ -170,12 +266,15 @@ Keep all services healthy on ports 3052, 3053, 3054.`
         throw new Error(`${data?.error || `Request failed: ${response.status}`}${details}`.trim())
       }
 
-      await fetchSources()
+      const refreshed = await fetchSources({ blocking: false })
+      if (refreshed) {
+        setMutationNotice('Source changes were applied and the dashboard refreshed.')
+      }
       return true
     } catch (err) {
       setMutationError(String(err))
       if (url === '/api/agent/sources/toggle' || url === '/api/agent/sources/reindex' || url === '/api/agent/sources/add' || url === '/api/agent/sources/remove' || url === '/api/agent/active-sources' || url === '/api/agent/write-mode') {
-        await fetchSources().catch(() => {})
+        void fetchSources({ blocking: false }).catch(() => {})
       }
       return false
     } finally {

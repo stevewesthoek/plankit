@@ -128,10 +128,44 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
     return false
   }
 
-  const rebuildIndexAndSearcher = async (): Promise<void> => {
-    await indexer.buildIndex()
+  const refreshSearcherFromDocs = (): void => {
     reconcileIndexStateFromDocs(indexer.getDocs(), getSourcesSafe())
     searcher = new VaultSearcher(indexer.getDocs())
+  }
+
+  const reindexSourceInBackground = (sourceId: string, sourcePath: string): void => {
+    if (indexingSources.has(sourceId)) return
+
+    setSourceIndexStatus(sourceId, {
+      indexed: false,
+      indexStatus: 'indexing',
+      indexError: undefined
+    })
+
+    indexingSources.add(sourceId)
+    void (async () => {
+      try {
+        const indexedFileCount = await indexer.buildIndexForSource(sourceId, sourcePath)
+        refreshSearcherFromDocs()
+        setSourceIndexStatus(sourceId, {
+          indexed: true,
+          indexStatus: 'ready',
+          indexedFileCount,
+          lastIndexedAt: new Date().toISOString(),
+          indexError: undefined
+        })
+      } catch (err) {
+        setSourceIndexStatus(sourceId, {
+          indexed: false,
+          indexStatus: 'failed',
+          indexError: String(err)
+        })
+      } finally {
+        indexingSources.delete(sourceId)
+      }
+    })().catch(err => {
+      console.error(`Background reindex failed for ${sourceId}:`, err)
+    })
   }
 
   const rejectUnindexedSources = (sourceIds: string[], reply: any) => {
@@ -835,8 +869,11 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
       }
 
       const sources = addSource(path, label, id)
-      await rebuildIndexAndSearcher()
-      return { sources }
+      const targetSource = id ? sources.find(source => source.id === id) : sources[sources.length - 1]
+      if (targetSource?.id && targetSource?.path) {
+        reindexSourceInBackground(targetSource.id, targetSource.path)
+      }
+      return { status: 'accepted', sources: getSourcesSafe(), indexingSourceId: targetSource?.id }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }
@@ -850,8 +887,9 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
       }
 
       const sources = removeSource(sourceId)
-      await rebuildIndexAndSearcher()
-      return { sources }
+      indexer.removeSourceDocs(sourceId)
+      refreshSearcherFromDocs()
+      return { status: 'removed', sources }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }
@@ -914,36 +952,7 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
         })
       }
 
-      setSourceIndexStatus(sourceId, {
-        indexed: false,
-        indexStatus: 'indexing',
-        indexError: undefined
-      })
-
-      indexingSources.add(sourceId)
-      void (async () => {
-        try {
-          const indexedFileCount = await indexer.buildIndexForSource(sourceId, source.path)
-          searcher = new VaultSearcher(indexer.getDocs())
-          setSourceIndexStatus(sourceId, {
-            indexed: true,
-            indexStatus: 'ready',
-            indexedFileCount,
-            lastIndexedAt: new Date().toISOString(),
-            indexError: undefined
-          })
-        } catch (err) {
-          setSourceIndexStatus(sourceId, {
-            indexed: false,
-            indexStatus: 'failed',
-            indexError: String(err)
-          })
-        } finally {
-          indexingSources.delete(sourceId)
-        }
-      })().catch(err => {
-        console.error(`Background reindex failed for ${sourceId}:`, err)
-      })
+      reindexSourceInBackground(sourceId, source.path)
 
       return reply.code(202).send({
         status: 'indexing',
