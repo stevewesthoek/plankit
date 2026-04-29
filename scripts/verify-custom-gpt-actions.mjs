@@ -142,6 +142,12 @@ function ensureSchemaRules(schema) {
   assert(Object.prototype.hasOwnProperty.call(writeArtifactSchema, 'preflight'), 'writeBuildFlowArtifact must accept preflight')
   assert(Object.prototype.hasOwnProperty.call(applyChangeSchema, 'dryRun'), 'applyBuildFlowFileChange must accept dryRun')
   assert(Object.prototype.hasOwnProperty.call(applyChangeSchema, 'preflight'), 'applyBuildFlowFileChange must accept preflight')
+  for (const key of ['delete_file', 'delete_directory', 'move', 'rename', 'mkdir', 'rmdir']) {
+    assert((applyChangeSchema.changeType?.enum || []).includes(key), `applyBuildFlowFileChange must accept ${key}`)
+  }
+  for (const key of ['from', 'to', 'recursive', 'onlyIfEmpty', 'overwrite', 'createParents', 'createParentDirectories', 'confirmedByUser', 'confirmationToken']) {
+    assert(Object.prototype.hasOwnProperty.call(applyChangeSchema, key), `applyBuildFlowFileChange must accept ${key}`)
+  }
 }
 
 function ensureConsequentialFlags(schema) {
@@ -169,6 +175,7 @@ function ensureInstructionAlignment(instructions) {
   }
   assert(instructions.includes('verified:true'), 'Instructions must mention verified:true')
   assert(instructions.includes('single enabled searchable source'), 'Instructions must mention single-source preference')
+  assert(instructions.includes('repo_app_maintainer'), 'Instructions must mention repo_app_maintainer')
   assert(!instructions.includes('/api/actions/context'), 'Instructions must not reference hidden/internal context endpoints')
 }
 

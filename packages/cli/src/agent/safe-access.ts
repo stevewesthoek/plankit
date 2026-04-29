@@ -2,7 +2,19 @@ import fs from 'fs'
 import path from 'path'
 import { getActiveSourceContext, getEnabledSources } from './config'
 
-export type WriteChangeType = 'create' | 'append' | 'overwrite' | 'patch'
+export type WriteChangeType =
+  | 'create'
+  | 'append'
+  | 'overwrite'
+  | 'patch'
+  | 'delete_file'
+  | 'delete_directory'
+  | 'move'
+  | 'rename'
+  | 'mkdir'
+  | 'rmdir'
+
+export type MaintainerWriteProfile = 'repo_app_write' | 'repo_app_maintainer'
 
 export type WritePolicySummary = {
   allowCreate: boolean
@@ -11,13 +23,23 @@ export type WritePolicySummary = {
   allowPatch: boolean
   allowCreateParentDirectories: boolean
   allowDelete: boolean
+  allowDeleteDirectory: boolean
   allowMove: boolean
   allowRename: boolean
+  allowMkdir: boolean
+  allowRmdir: boolean
+  recursiveDeleteRequiresConfirmation: boolean
+  maxRecursiveDeleteFilesWithoutConfirmation: number
   allowedRoots: string[]
   blockedGlobs: string[]
+  blockedWriteGlobs: string[]
+  generatedDeleteAllowedGlobs: string[]
   confirmationRequiredGlobs: string[]
+  protectedWriteGlobs: string[]
   protectedGlobs: string[]
   blockedContentPatterns: string[]
+  binaryWriteBlocked: boolean
+  binaryDeleteAllowedWithConfirmation: boolean
   maxWriteBytes: number
   maxCreateBytes: number
   maxOverwriteBytes: number
@@ -28,10 +50,15 @@ export type WriteValidationErrorCode =
   | 'WRITE_PATH_BLOCKED'
   | 'PROTECTED_PATH'
   | 'PARENT_DIRECTORY_MISSING'
-  | 'CREATE_BLOCKED'
-  | 'OVERWRITE_BLOCKED'
-  | 'APPEND_BLOCKED'
-  | 'PATCH_BLOCKED'
+  | 'CREATE_NOT_ALLOWED'
+  | 'OVERWRITE_NOT_ALLOWED'
+  | 'APPEND_NOT_ALLOWED'
+  | 'PATCH_NOT_ALLOWED'
+  | 'DELETE_NOT_ALLOWED'
+  | 'MOVE_NOT_ALLOWED'
+  | 'RENAME_NOT_ALLOWED'
+  | 'MKDIR_NOT_ALLOWED'
+  | 'RMDIR_NOT_ALLOWED'
   | 'PATCH_FIND_NOT_FOUND'
   | 'PATCH_MULTIPLE_MATCHES'
   | 'SOURCE_NOT_WRITABLE'
@@ -39,15 +66,54 @@ export type WriteValidationErrorCode =
   | 'SOURCE_NOT_FOUND'
   | 'PATH_TRAVERSAL_BLOCKED'
   | 'ABSOLUTE_PATH_BLOCKED'
+  | 'PATH_NOT_ALLOWED'
   | 'SECRET_PATH_BLOCKED'
+  | 'SECRET_FILE_BLOCKED'
   | 'SECRET_PATTERN_BLOCKED'
   | 'GENERATED_FILE_BLOCKED'
+  | 'GENERATED_WRITE_BLOCKED'
   | 'LOCKFILE_WRITE_BLOCKED'
   | 'BINARY_FILE_BLOCKED'
+  | 'BINARY_WRITE_BLOCKED'
+  | 'BINARY_DELETE_REQUIRES_CONFIRMATION'
+  | 'DIRECTORY_NOT_EMPTY'
+  | 'TARGET_ALREADY_EXISTS'
+  | 'SOURCE_PATH_NOT_FOUND'
+  | 'INVALID_CONFIRMATION_TOKEN'
+  | 'CONFIRMATION_TOKEN_EXPIRED'
   | 'FILE_TOO_LARGE'
   | 'INVALID_ENCODING'
   | 'VERIFY_FAILED'
   | 'REQUIRES_EXPLICIT_CONFIRMATION'
+  | 'OPERATION_NOT_SUPPORTED'
+
+export type WritePreflightResult = {
+  status: 'allowed' | 'needs_confirmation' | 'blocked'
+  code?: WriteValidationErrorCode
+  sourceId?: string
+  operation: WriteChangeType
+  requestedPath: string
+  normalizedPath: string
+  from?: string
+  to?: string
+  reason: string
+  hint: string
+  matchedAllowGlob?: string
+  matchedBlockGlob?: string
+  matchedConfirmationGlob?: string
+  exists?: boolean
+  isDirectory?: boolean
+  directoryEmpty?: boolean
+  recursiveDeleteCount?: number
+  recursiveDirectoryCount?: number
+  wouldWrite?: boolean
+  wouldDelete?: boolean
+  wouldMove?: boolean
+  wouldCreateDirectory?: boolean
+  requiresConfirmation: boolean
+  confirmationToken?: string
+  verified: false
+}
 
 export type WriteValidationError = {
   code: WriteValidationErrorCode
@@ -55,6 +121,10 @@ export type WriteValidationError = {
   userMessage: string
   reason: string
   hint: string
+  matchedAllowGlob?: string
+  matchedBlockGlob?: string
+  matchedConfirmationGlob?: string
+  requiresConfirmation: boolean
 }
 
 export type WriteValidationResult =
@@ -178,8 +248,8 @@ const SAFE_WRITE_ROOTS = [
 
 const PROTECTED_FILES = new Set(['docker-compose.yml'])
 const BLOCKED_DIRECTORY_NAMES = new Set(['node_modules', '.next', 'dist', 'build', 'coverage', '.git'])
-const ALLOWED_DOTFILES = new Set(['.github', '.env.example', '.gitignore', '.buildflow', '.nvmrc', '.prettierrc', '.eslintrc'])
-const CONFIRMATION_REQUIRED_GLOBS = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', '.github/**', 'LICENSE', 'prisma/migrations/**']
+const ALLOWED_DOTFILES = new Set(['.github', '.env.example', '.env.sample', '.env.template', '.env.local.example', '.env.development.example', '.env.production.example', '.gitignore', '.buildflow', '.nvmrc', '.prettierrc', '.eslintrc'])
+const CONFIRMATION_REQUIRED_GLOBS = ['package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', '.github/**', 'LICENSE', 'prisma/migrations/**', 'Dockerfile', 'docker-compose.yml', 'public/**', 'assets/**', 'static/**', 'scripts/**', 'bin/**', 'tools/**']
 const BLOCKED_CONTENT_PATTERNS = ['BEGIN RSA PRIVATE KEY', 'BEGIN OPENSSH PRIVATE KEY', 'BEGIN EC PRIVATE KEY', 'ghp_', 'github_pat_', 'sk_live_', 'rk_live_', 'xoxb-', 'AKIA', 'AIza']
 
 export function isSafeRelativePath(relativePath: string): boolean {
@@ -198,14 +268,24 @@ export function getDefaultWritePolicy(): WritePolicySummary {
     allowAppend: true,
     allowPatch: true,
     allowCreateParentDirectories: true,
-    allowDelete: false,
-    allowMove: false,
-    allowRename: false,
+    allowDelete: true,
+    allowDeleteDirectory: true,
+    allowMove: true,
+    allowRename: true,
+    allowMkdir: true,
+    allowRmdir: true,
+    recursiveDeleteRequiresConfirmation: true,
+    maxRecursiveDeleteFilesWithoutConfirmation: 0,
     allowedRoots: ['src/**', 'app/**', 'components/**', 'lib/**', 'pages/**', 'server/**', 'client/**', 'shared/**', 'features/**', 'modules/**', 'utils/**', 'hooks/**', 'services/**', 'styles/**', 'types/**', 'test/**', 'tests/**', '__tests__/**', 'e2e/**', 'playwright/**', 'cypress/**', 'prisma/**', 'scripts/**', 'bin/**', 'tools/**', '*.md', '*.mdx', 'docs/**', 'plans/**', 'notes/**', 'artifacts/**', '.buildflow/**', 'README.md', 'CHANGELOG.md', 'CLAUDE.md', 'decision-log.md', 'LICENSE', 'package.json', 'docker-compose.yml', 'Dockerfile', 'next.config.*', 'vite.config.*', 'nuxt.config.*', 'remix.config.*', 'astro.config.*', 'tsconfig.json', 'jsconfig.json', 'tailwind.config.*', 'postcss.config.*', 'components.json', 'eslint.config.*', 'prettier.config.*', '.prettierrc', '.prettierrc.*', 'vitest.config.*', 'jest.config.*', 'playwright.config.*', 'cypress.config.*', 'nixpacks.toml', 'turbo.json', 'pnpm-workspace.yaml', '.env.example', '.env.sample', '.env.template', '.env.local.example', '.env.development.example', '.env.production.example'],
-    blockedGlobs: ['.env', '.env.*', '**/*.pem', '**/*.key', '**/id_rsa', '**/id_ed25519', '.git/**', 'node_modules/**', '.next/**', 'dist/**', 'build/**', 'coverage/**'],
+    blockedGlobs: ['.env', '.env.*', '**/*.pem', '**/*.key', '**/id_rsa', '**/id_ed25519', '.git/**', 'node_modules/**', '.next/**', 'dist/**', 'build/**', 'coverage/**', '.cache/**', '.turbo/**', '.vercel/**', '.npm/**', '.yarn/**', '.pnpm-store/**', 'generated/**', '.prisma/client/**'],
+    blockedWriteGlobs: ['.next/**', 'dist/**', 'build/**', 'out/**', 'coverage/**', '.cache/**', '.turbo/**', '.vercel/**', '.npm/**', '.yarn/**', '.pnpm-store/**', 'generated/**', '.prisma/client/**'],
+    generatedDeleteAllowedGlobs: ['tsconfig.tsbuildinfo', '.next/**', 'dist/**', 'build/**', 'out/**', 'coverage/**', '.cache/**', '.turbo/**'],
     confirmationRequiredGlobs: CONFIRMATION_REQUIRED_GLOBS,
+    protectedWriteGlobs: ['package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', '.github/**', 'Dockerfile', 'docker-compose.yml', 'LICENSE', 'prisma/migrations/**', 'public/**', 'assets/**', 'static/**', 'scripts/**', 'bin/**', 'tools/**'],
     protectedGlobs: ['package.json', 'docker-compose.yml'],
     blockedContentPatterns: BLOCKED_CONTENT_PATTERNS,
+    binaryWriteBlocked: true,
+    binaryDeleteAllowedWithConfirmation: true,
     maxWriteBytes: 1_000_000,
     maxCreateBytes: 200_000,
     maxOverwriteBytes: 300_000,
@@ -233,6 +313,9 @@ function classifyBlockedPath(normalized: string): { code: WriteValidationErrorCo
   if (/(\.env(\..*)?)$/i.test(normalized) || /(^|\/)\.env(\..*)?$/i.test(normalized)) {
     return { code: 'SECRET_PATH_BLOCKED', reason: 'secret_path', message: 'Files that may contain secrets are blocked.', hint: 'Choose a documentation path instead of an environment file.' }
   }
+  if (normalized.split('/').some(part => part === '.next' || part === 'dist' || part === 'build' || part === 'coverage' || part === '.cache' || part === '.turbo' || part === '.vercel' || part === '.npm' || part === '.yarn' || part === '.pnpm-store' || part === 'generated' || part === '.prisma')) {
+    return { code: 'GENERATED_WRITE_BLOCKED', reason: 'generated_write', message: 'Generated or build output paths are blocked.', hint: 'Write to the source file or a repo note instead.' }
+  }
   if (normalized.split('/').some(part => BLOCKED_DIRECTORY_NAMES.has(part))) {
     return { code: 'PROTECTED_PATH', reason: 'protected_directory', message: 'Protected runtime directories are blocked.', hint: 'Write outside build, dist, node_modules, or .git directories.' }
   }
@@ -251,7 +334,7 @@ function matchesGlob(pattern: string, value: string): boolean {
 }
 
 function buildConfirmationError(reason: string, hint: string): WriteValidationError {
-  return { code: 'REQUIRES_EXPLICIT_CONFIRMATION', message: 'This change requires explicit confirmation.', userMessage: 'BuildFlow needs explicit confirmation before making this change.', reason, hint }
+  return { code: 'REQUIRES_EXPLICIT_CONFIRMATION', message: 'This change requires explicit confirmation.', userMessage: 'BuildFlow needs explicit confirmation before making this change.', reason, hint, requiresConfirmation: true }
 }
 
 function isConfirmationRequiredPath(normalizedPath: string): boolean {
@@ -275,6 +358,9 @@ export function validateWriteTarget(params: {
   sourceRoot?: string
   allowCreateParentDirectories?: boolean
   content?: string
+  toPath?: string
+  confirmedByUser?: boolean
+  confirmationToken?: string
 }): WriteValidationResult {
   const policy = getDefaultWritePolicy()
   const requestedPath = params.requestedPath || ''
@@ -283,20 +369,20 @@ export function validateWriteTarget(params: {
   const sourceRootRelativePath = normalizedPath
 
   if (!requestedPath || !normalizedPath) {
-    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'WRITE_PATH_BLOCKED', message: 'This path is blocked by the source write policy.', userMessage: 'BuildFlow can read this file, but it needs a valid repo-relative path to write it.', reason: 'empty_path', hint: 'Provide a repo-relative path like docs/README.md.' } }
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'WRITE_PATH_BLOCKED', message: 'This path is blocked by the source write policy.', userMessage: 'BuildFlow can read this file, but it needs a valid repo-relative path to write it.', reason: 'empty_path', hint: 'Provide a repo-relative path like docs/README.md.', requiresConfirmation: false } }
   }
 
   if (rawRequestedPath.startsWith('/')) {
-    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'ABSOLUTE_PATH_BLOCKED', message: 'Absolute paths outside the repo are blocked.', userMessage: 'BuildFlow can only write inside the connected source root.', reason: 'absolute_path', hint: 'Use a repo-relative path inside the source root.' } }
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'ABSOLUTE_PATH_BLOCKED', message: 'Absolute paths outside the repo are blocked.', userMessage: 'BuildFlow can only write inside the connected source root.', reason: 'absolute_path', hint: 'Use a repo-relative path inside the source root.', requiresConfirmation: false } }
   }
 
   const blocked = classifyBlockedPath(normalizedPath)
   if (blocked) {
-    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: blocked.code, message: blocked.message, userMessage: blocked.message, reason: blocked.reason, hint: blocked.hint } }
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: blocked.code, message: blocked.message, userMessage: blocked.message, reason: blocked.reason, hint: blocked.hint, requiresConfirmation: false } }
   }
 
   if (!isWithinAllowedRoots(normalizedPath)) {
-    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'WRITE_PATH_BLOCKED', message: 'This path is blocked by the source write policy.', userMessage: 'BuildFlow can read this file, but the current write policy blocks changes to this path.', reason: 'path_not_allowed', hint: 'Choose an allowed docs path or update the source write policy.' } }
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'PATH_NOT_ALLOWED', message: 'This path is blocked by the source write policy.', userMessage: 'BuildFlow can read this file, but the current write policy blocks changes to this path.', reason: 'path_not_allowed', hint: 'Choose an allowed repo-local path or update the source write policy.', requiresConfirmation: false } }
   }
 
   if (isConfirmationRequiredPath(normalizedPath)) {
@@ -311,7 +397,7 @@ export function validateWriteTarget(params: {
       try {
         JSON.parse(params.content)
       } catch {
-        return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'INVALID_ENCODING', message: 'Package.json content must be valid JSON.', userMessage: 'BuildFlow could not parse package.json content.', reason: 'invalid_json', hint: 'Provide valid JSON before writing package.json.' } }
+        return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'INVALID_ENCODING', message: 'Package.json content must be valid JSON.', userMessage: 'BuildFlow could not parse package.json content.', reason: 'invalid_json', hint: 'Provide valid JSON before writing package.json.', requiresConfirmation: false } }
       }
     }
   }
@@ -320,34 +406,52 @@ export function validateWriteTarget(params: {
     const byteLength = Buffer.byteLength(params.content, 'utf8')
     const maxBytes = params.changeType === 'create' ? policy.maxCreateBytes : params.changeType === 'overwrite' ? policy.maxOverwriteBytes : policy.maxPatchTargetBytes
     if (byteLength > maxBytes) {
-      return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'FILE_TOO_LARGE', message: 'The write exceeds the configured size limit.', userMessage: 'BuildFlow is not allowed to write content this large without a smaller change.', reason: 'content_too_large', hint: 'Reduce the file size or split the change into smaller edits.' } }
+      return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'FILE_TOO_LARGE', message: 'The write exceeds the configured size limit.', userMessage: 'BuildFlow is not allowed to write content this large without a smaller change.', reason: 'content_too_large', hint: 'Reduce the file size or split the change into smaller edits.', requiresConfirmation: false } }
     }
     if (BLOCKED_CONTENT_PATTERNS.some(pattern => params.content.includes(pattern))) {
-      return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'SECRET_PATTERN_BLOCKED', message: 'The content looks like it contains a secret.', userMessage: 'BuildFlow will not write content that looks like a real secret or private key.', reason: 'blocked_content_pattern', hint: 'Replace secrets with placeholders such as [REDACTED] or <token>.' } }
+      return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'SECRET_PATTERN_BLOCKED', message: 'The content looks like it contains a secret.', userMessage: 'BuildFlow will not write content that looks like a real secret or private key.', reason: 'blocked_content_pattern', hint: 'Replace secrets with placeholders such as [REDACTED] or <token>.', requiresConfirmation: false } }
     }
     if (/[\u0000]/.test(params.content)) {
-      return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'BINARY_FILE_BLOCKED', message: 'Binary content is blocked by policy.', userMessage: 'BuildFlow only writes text files with the general repo-write profile.', reason: 'binary_content', hint: 'Use a text-based file or a dedicated binary upload path.' } }
+      return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'BINARY_WRITE_BLOCKED', message: 'Binary content is blocked by policy.', userMessage: 'BuildFlow only writes text files with the general repo-write profile.', reason: 'binary_content', hint: 'Use a text-based file or a dedicated binary upload path.', requiresConfirmation: false } }
     }
   }
 
   if (params.changeType === 'create' && !policy.allowCreate) {
-    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'CREATE_BLOCKED', message: 'Create is blocked by policy.', userMessage: 'BuildFlow is not allowed to create files here.', reason: 'create_blocked', hint: 'Use an allowed docs path or update the source policy.' } }
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'CREATE_NOT_ALLOWED', message: 'Create is blocked by policy.', userMessage: 'BuildFlow is not allowed to create files here.', reason: 'create_blocked', hint: 'Use an allowed docs path or update the source policy.', requiresConfirmation: false } }
   }
   if (params.changeType === 'overwrite' && !policy.allowOverwrite) {
-    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'OVERWRITE_BLOCKED', message: 'Overwrite is blocked by policy.', userMessage: 'BuildFlow is not allowed to overwrite files here.', reason: 'overwrite_blocked', hint: 'Use an allowed docs path or update the source policy.' } }
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'OVERWRITE_NOT_ALLOWED', message: 'Overwrite is blocked by policy.', userMessage: 'BuildFlow is not allowed to overwrite files here.', reason: 'overwrite_blocked', hint: 'Use an allowed docs path or update the source policy.', requiresConfirmation: false } }
   }
   if (params.changeType === 'append' && !policy.allowAppend) {
-    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'APPEND_BLOCKED', message: 'Append is blocked by policy.', userMessage: 'BuildFlow is not allowed to append to files here.', reason: 'append_blocked', hint: 'Use an allowed docs path or update the source policy.' } }
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'APPEND_NOT_ALLOWED', message: 'Append is blocked by policy.', userMessage: 'BuildFlow is not allowed to append to files here.', reason: 'append_blocked', hint: 'Use an allowed docs path or update the source policy.', requiresConfirmation: false } }
   }
   if (params.changeType === 'patch' && !policy.allowPatch) {
-    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'PATCH_BLOCKED', message: 'Patch is blocked by policy.', userMessage: 'BuildFlow is not allowed to patch files here.', reason: 'patch_blocked', hint: 'Use an allowed docs path or update the source policy.' } }
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'PATCH_NOT_ALLOWED', message: 'Patch is blocked by policy.', userMessage: 'BuildFlow is not allowed to patch files here.', reason: 'patch_blocked', hint: 'Use an allowed docs path or update the source policy.', requiresConfirmation: false } }
+  }
+  if (params.changeType === 'delete_file' && !policy.allowDelete) {
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'DELETE_NOT_ALLOWED', message: 'Delete is blocked by policy.', userMessage: 'BuildFlow is not allowed to delete files here.', reason: 'delete_blocked', hint: 'Use an allowed cleanup path or update the source policy.', requiresConfirmation: false } }
+  }
+  if ((params.changeType === 'delete_directory' || params.changeType === 'rmdir') && !policy.allowDeleteDirectory) {
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'DELETE_NOT_ALLOWED', message: 'Directory delete is blocked by policy.', userMessage: 'BuildFlow is not allowed to delete directories here.', reason: 'delete_directory_blocked', hint: 'Use an allowed cleanup path or update the source policy.', requiresConfirmation: false } }
+  }
+  if (params.changeType === 'move' && !policy.allowMove) {
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'MOVE_NOT_ALLOWED', message: 'Move is blocked by policy.', userMessage: 'BuildFlow is not allowed to move files here.', reason: 'move_blocked', hint: 'Use an allowed archive path or update the source policy.', requiresConfirmation: false } }
+  }
+  if (params.changeType === 'rename' && !policy.allowRename) {
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'RENAME_NOT_ALLOWED', message: 'Rename is blocked by policy.', userMessage: 'BuildFlow is not allowed to rename files here.', reason: 'rename_blocked', hint: 'Use an allowed repo-local path or update the source policy.', requiresConfirmation: false } }
+  }
+  if (params.changeType === 'mkdir' && !policy.allowMkdir) {
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'MKDIR_NOT_ALLOWED', message: 'mkdir is blocked by policy.', userMessage: 'BuildFlow is not allowed to create directories here.', reason: 'mkdir_blocked', hint: 'Use an allowed repo-local path or update the source policy.', requiresConfirmation: false } }
+  }
+  if ((params.changeType === 'delete_directory' || params.changeType === 'rmdir') && !policy.allowRmdir) {
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'RMDIR_NOT_ALLOWED', message: 'rmdir is blocked by policy.', userMessage: 'BuildFlow is not allowed to remove directories here.', reason: 'rmdir_blocked', hint: 'Use an allowed repo-local path or update the source policy.', requiresConfirmation: false } }
   }
 
   const sourceRoot = params.sourceRoot ? path.resolve(params.sourceRoot) : ''
   const fullPath = sourceRoot ? path.resolve(path.join(sourceRoot, normalizedPath)) : normalizedPath
   const parentPath = path.dirname(fullPath)
   if (sourceRoot && !fullPath.startsWith(sourceRoot)) {
-    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'PATH_TRAVERSAL_BLOCKED', message: 'Path traversal outside the repo is blocked.', userMessage: 'BuildFlow can only write inside the connected source root.', reason: 'path_outside_source_root', hint: 'Use a repo-relative path inside the source root.' } }
+    return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'PATH_TRAVERSAL_BLOCKED', message: 'Path traversal outside the repo is blocked.', userMessage: 'BuildFlow can only write inside the connected source root.', reason: 'path_outside_source_root', hint: 'Use a repo-relative path inside the source root.', requiresConfirmation: false } }
   }
 
   return { ok: true, requestedPath, normalizedPath, sourceRootRelativePath, fullPath, parentPath, policy }

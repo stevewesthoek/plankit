@@ -34,13 +34,23 @@ type WritePolicy = {
   allowPatch?: boolean
   allowCreateParentDirectories?: boolean
   allowDelete?: boolean
+  allowDeleteDirectory?: boolean
   allowMove?: boolean
   allowRename?: boolean
+  allowMkdir?: boolean
+  allowRmdir?: boolean
+  recursiveDeleteRequiresConfirmation?: boolean
+  maxRecursiveDeleteFilesWithoutConfirmation?: number
   allowedRoots?: string[]
   blockedGlobs?: string[]
+  blockedWriteGlobs?: string[]
+  generatedDeleteAllowedGlobs?: string[]
   confirmationRequiredGlobs?: string[]
+  protectedWriteGlobs?: string[]
   protectedGlobs?: string[]
   blockedContentPatterns?: string[]
+  binaryWriteBlocked?: boolean
+  binaryDeleteAllowedWithConfirmation?: boolean
   maxWriteBytes?: number
   maxCreateBytes?: number
   maxOverwriteBytes?: number
@@ -129,8 +139,14 @@ function classifyBlockedWrite(path: string, policy?: WritePolicy, content?: stri
   if (matchesAny(policy?.confirmationRequiredGlobs, normalized)) {
     return { code: 'REQUIRES_EXPLICIT_CONFIRMATION', message: 'This change requires explicit confirmation.', userMessage: 'BuildFlow needs explicit confirmation before making this change.', reason: 'confirmation_required_path', hint: 'Explicitly confirm before editing lockfiles, GitHub workflows, LICENSE, or Prisma migrations.' }
   }
+  if (matchesAny(policy?.protectedWriteGlobs, normalized)) {
+    return { code: 'REQUIRES_EXPLICIT_CONFIRMATION', message: 'This change requires explicit confirmation.', userMessage: 'BuildFlow needs explicit confirmation before making this change.', reason: 'protected_write_path', hint: 'Explicitly confirm before editing this protected maintenance path.' }
+  }
   if (matchesAny(policy?.blockedGlobs, normalized)) {
     return { code: 'SECRET_PATH_BLOCKED', message: 'This path is blocked because it may contain secrets.', userMessage: 'BuildFlow will not write to secret-like files such as .env or private key paths.', reason: 'blocked_glob', hint: 'Use a docs or project note path instead.' }
+  }
+  if (matchesAny(policy?.blockedWriteGlobs, normalized)) {
+    return { code: 'GENERATED_WRITE_BLOCKED', message: 'This path is blocked because it is generated output.', userMessage: 'BuildFlow will not write generated or build output files.', reason: 'generated_write_blocked', hint: 'Write to the source file or a repo note instead.' }
   }
   if (matchesAny(policy?.protectedGlobs, normalized)) {
     return { code: 'PROTECTED_PATH', message: 'This file is protected by policy.', userMessage: 'BuildFlow is not allowed to write to this protected file.', reason: 'protected_glob', hint: 'Choose a docs path or update the source policy if intentional.' }
@@ -310,7 +326,7 @@ async function preflightWrite(body: Record<string, unknown>, userToken?: string)
   if (sourceError) return sourceError
   const sourceId = typeof body.sourceId === 'string' ? body.sourceId : undefined
   const path = typeof body.path === 'string' ? body.path : ''
-  const changeType = body.changeType === 'append' || body.changeType === 'overwrite' || body.changeType === 'patch' ? body.changeType : 'create'
+  const changeType = body.changeType === 'append' || body.changeType === 'overwrite' || body.changeType === 'patch' || body.changeType === 'delete_file' || body.changeType === 'delete_directory' || body.changeType === 'move' || body.changeType === 'rename' || body.changeType === 'mkdir' || body.changeType === 'rmdir' ? body.changeType : 'create'
   const sourceMap = await loadSourceMap(userToken)
   const source = sourceId ? sourceMap.map.get(sourceId) : sourceMap.sources[0]
   const policy = (source?.writePolicy || {}) as WritePolicy
@@ -320,7 +336,7 @@ async function preflightWrite(body: Record<string, unknown>, userToken?: string)
   const matchedBlockGlob = findMatchingGlob(policy?.blockedGlobs, normalizedPath) || findMatchingGlob(policy?.confirmationRequiredGlobs, normalizedPath) || findMatchingGlob(policy?.protectedGlobs, normalizedPath)
   if (blocked) {
     return {
-      status: 403,
+      status: blocked.code === 'REQUIRES_EXPLICIT_CONFIRMATION' ? 'needs_confirmation' as const : 'blocked' as const,
       resultStatus: 'error' as const,
       allowed: false,
       verified: false,
@@ -333,11 +349,13 @@ async function preflightWrite(body: Record<string, unknown>, userToken?: string)
       matchedAllowGlob,
       matchedBlockGlob,
       requiresConfirmation: blocked.code === 'REQUIRES_EXPLICIT_CONFIRMATION',
+      matchedConfirmationGlob: findMatchingGlob(policy?.confirmationRequiredGlobs, normalizedPath),
+      confirmationToken: blocked.code === 'REQUIRES_EXPLICIT_CONFIRMATION' ? `confirm:${source?.id || sourceId || ''}:${changeType}:${normalizedPath}` : undefined,
       error: { ...blocked, policy }
     }
   }
   return {
-    status: 'ok' as const,
+    status: 'allowed' as const,
     allowed: true,
     verified: false,
     sourceId: source?.id || sourceId || '',
@@ -346,8 +364,12 @@ async function preflightWrite(body: Record<string, unknown>, userToken?: string)
     sourceRootRelativePath: normalizedPath,
     changeType,
     wouldCreateParentDirectories: true,
-    wouldWrite: true,
+    wouldWrite: ['create', 'append', 'overwrite', 'patch', 'mkdir'].includes(changeType),
+    wouldDelete: ['delete_file', 'delete_directory', 'rmdir'].includes(changeType),
+    wouldMove: ['move', 'rename'].includes(changeType),
+    wouldCreateDirectory: changeType === 'mkdir',
     matchedAllowGlob,
+    matchedConfirmationGlob: findMatchingGlob(policy?.confirmationRequiredGlobs, normalizedPath),
     policy
   }
 }
@@ -370,6 +392,7 @@ export async function listBuildFlowSources(userToken?: string) {
       searchable: source.searchable === true,
       writable: source.writable === true,
       writeProfile: source.writeProfile,
+      operations: ['create', 'patch', 'overwrite', 'append', 'deleteFile', 'deleteDirectory', 'move', 'rename', 'mkdir', 'rmdir'],
       writePolicy: source.writePolicy
     }))
   }
@@ -584,6 +607,29 @@ export async function dispatchBuildFlowFileChange(body: Record<string, unknown>,
     const result = await executeAction('/api/patch-file', payload, userToken)
     const verified = assertVerifiedWriteResult(result, 'applyBuildFlowFileChange patch')
     return { ...(result as Record<string, unknown>), ...verified }
+  }
+
+  if (changeType === 'delete_file' || changeType === 'delete_directory' || changeType === 'rmdir') {
+    payload.recursive = body.recursive === true
+    payload.onlyIfEmpty = body.onlyIfEmpty !== false
+    payload.confirmedByUser = body.confirmedByUser === true
+    payload.confirmationToken = typeof body.confirmationToken === 'string' ? body.confirmationToken : undefined
+    return executeAction('/api/delete-file', payload, userToken)
+  }
+
+  if (changeType === 'move' || changeType === 'rename') {
+    payload.to = body.to
+    payload.overwrite = body.overwrite === true
+    payload.createParents = body.createParents === true || body.createParentDirectories === true
+    payload.confirmedByUser = body.confirmedByUser === true
+    payload.confirmationToken = typeof body.confirmationToken === 'string' ? body.confirmationToken : undefined
+    return executeAction('/api/move-file', payload, userToken)
+  }
+
+  if (changeType === 'mkdir') {
+    payload.createParents = body.createParents === true || body.createParentDirectories === true
+    payload.confirmedByUser = body.confirmedByUser === true
+    return executeAction('/api/mkdir', payload, userToken)
   }
 
   throw new Error('Invalid changeType')

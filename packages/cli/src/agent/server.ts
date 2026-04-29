@@ -10,7 +10,7 @@ import { createExportPlan } from './export'
 import { loadConfig, getWorkspaces, getSources, getSourcesSafe, addSource, removeSource, setSourceEnabled, getActiveSourceContext, setActiveSourceContext, getWriteMode, setWriteMode, getSourceIndexState, setSourceIndexStatus } from './config'
 import { reconcileIndexStateFromDocs } from './index-state'
 import { listWorkspaceTree, grepWorkspace, getWorkspaceInfo, resolveWorkspacePath, validateWorkspacePath } from './workspace'
-import { getResolvedActiveSources, isAllowedArtifactRoot, isAllowedSafeWriteRoot, isBlockedWritePath, redactSecrets, resolveTargetSourceId, resolveWithinSource, shouldIncludeEntry, truncateContent, getDefaultWritePolicy, validateWriteTarget } from './safe-access'
+import { getResolvedActiveSources, isAllowedArtifactRoot, isAllowedSafeWriteRoot, isBlockedWritePath, redactSecrets, resolveTargetSourceId, resolveWithinSource, shouldIncludeEntry, truncateContent, getDefaultWritePolicy, validateWriteTarget, normalizeRepoRelativePath } from './safe-access'
 import type { Workspace } from '@buildflow/shared'
 import { buildArtifactFilename, normalizeArtifactSlug, verifyWrittenFile } from './write-verification'
 
@@ -60,6 +60,64 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
     }
   }
 
+  const buildConfirmationToken = (sourceId: string, operation: string, normalizedPath: string, toPath?: string) =>
+    `confirm:${sourceId}:${operation}:${normalizedPath}${toPath ? `->${toPath}` : ''}`
+
+  const structuredWriteError = (
+    reply: any,
+    code: number,
+    payload: Record<string, unknown>
+  ) => reply.code(code).send({ status: 'error', verified: false, ...payload })
+
+  const confirmationPayload = (
+    sourceId: string,
+    operation: string,
+    requestedPath: string,
+    normalizedPath: string,
+    reason: string,
+    summary: string,
+    matchedConfirmationGlob?: string,
+    toPath?: string
+  ) => ({
+    status: 'needs_confirmation',
+    code: 'REQUIRES_EXPLICIT_CONFIRMATION',
+    sourceId,
+    operation,
+    requestedPath,
+    normalizedPath,
+    ...(toPath ? { to: toPath } : {}),
+    reason,
+    summary,
+    matchedConfirmationGlob,
+    confirmationToken: buildConfirmationToken(sourceId, operation, normalizedPath, toPath)
+  })
+
+  const confirmOperation = (body: Record<string, unknown>, sourceId: string, operation: string, normalizedPath: string, toPath?: string) => {
+    const expected = buildConfirmationToken(sourceId, operation, normalizedPath, toPath)
+    if (body.confirmationToken === expected) return true
+    if (body.confirmedByUser === true) return true
+    return false
+  }
+
+  const countRecursiveEntries = (targetPath: string) => {
+    let files = 0
+    let directories = 0
+    const walk = (current: string) => {
+      if (!fs.existsSync(current)) return
+      for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+        const next = path.join(current, entry.name)
+        if (entry.isDirectory()) {
+          directories += 1
+          walk(next)
+        } else {
+          files += 1
+        }
+      }
+    }
+    walk(targetPath)
+    return { files, directories }
+  }
+
   const rebuildIndexAndSearcher = async (): Promise<void> => {
     await indexer.buildIndex()
     reconcileIndexStateFromDocs(indexer.getDocs(), getSourcesSafe())
@@ -92,7 +150,7 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
         port,
         vaultPath: config?.vaultPath || 'not configured',
         indexedFiles: indexer.getDocs().length,
-        version: '1.2.11-beta'
+        version: '1.2.12-beta'
       }
   })
 
@@ -452,6 +510,130 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
       const updated = original.replace(find, replace)
       fs.writeFileSync(validation.fullPath, updated, 'utf-8')
       return { status: 'updated', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: 'patch', replacements: 1, matchCount: matches, bytesBefore: Buffer.byteLength(original, 'utf8'), bytesAfter: Buffer.byteLength(updated, 'utf8'), ...verifiedWrite(validation.fullPath) }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.post<{ Body: { sourceId?: string; path: string; confirmedByUser?: boolean; confirmationToken?: string; recursive?: boolean; onlyIfEmpty?: boolean } }>('/api/delete-file', async (request, reply) => {
+    try {
+      const { sourceId, path: relPath, recursive = false, onlyIfEmpty = true } = request.body
+      if (!relPath) return reply.code(400).send({ error: 'Path required' })
+      const resolvedSourceId = resolveTargetSourceId(sourceId)
+      const sourceRoot = getResolvedActiveSources([resolvedSourceId])[0]?.path
+      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: relPath, changeType: recursive ? 'delete_directory' : 'delete_file', sourceRoot, confirmedByUser: request.body.confirmedByUser, confirmationToken: request.body.confirmationToken })
+      if (!validation.ok) {
+        const blocked = validation as Extract<typeof validation, { ok: false }>
+        return structuredWriteError(reply, 403, {
+          sourceId: resolvedSourceId,
+          path: blocked.requestedPath,
+          requestedPath: blocked.requestedPath,
+          normalizedPath: blocked.normalizedPath,
+          sourceRootRelativePath: blocked.sourceRootRelativePath,
+          changeType: recursive ? 'delete_directory' : 'delete_file',
+          error: { ...blocked.error, policy: blocked.policy }
+        })
+      }
+      if (!fs.existsSync(validation.fullPath)) return reply.code(404).send({ error: 'File not found' })
+      const stat = fs.statSync(validation.fullPath)
+      const operation = recursive || stat.isDirectory() ? 'delete_directory' : 'delete_file'
+      if (stat.isDirectory()) {
+        const { files, directories } = countRecursiveEntries(validation.fullPath)
+        if (!recursive && !onlyIfEmpty) {
+          if (!confirmOperation(request.body, resolvedSourceId, operation, validation.normalizedPath)) {
+            return reply.code(403).send(confirmationPayload(resolvedSourceId, operation, relPath, validation.normalizedPath, 'recursive_delete_requires_confirmation', 'This deletes a directory and its contents.', ''))
+          }
+        }
+        if (!recursive && onlyIfEmpty && fs.readdirSync(validation.fullPath).length > 0) {
+          return reply.code(409).send({ status: 'error', verified: false, code: 'DIRECTORY_NOT_EMPTY', sourceId: resolvedSourceId, path: relPath, requestedPath: relPath, normalizedPath: validation.normalizedPath, changeType: operation, reason: 'directory_not_empty', hint: 'Pass recursive:true with confirmation or delete the contents first.' })
+        }
+        if (!confirmOperation(request.body, resolvedSourceId, operation, validation.normalizedPath)) {
+          return reply.code(403).send(confirmationPayload(resolvedSourceId, operation, relPath, validation.normalizedPath, 'recursive_delete_requires_confirmation', 'This deletes a directory and its contents.'))
+        }
+        fs.rmSync(validation.fullPath, { recursive: true, force: false })
+        return { status: 'deleted', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: operation, verified: true, existsBefore: true, existsAfter: false, deletedFileCount: files, deletedDirectoryCount: directories }
+      }
+      if (!confirmOperation(request.body, resolvedSourceId, operation, validation.normalizedPath)) {
+        const matchedConfirmationGlob = validation.policy.confirmationRequiredGlobs.find(pattern => pattern === relPath || relPath.startsWith(pattern.replace('/**', '')))
+        return reply.code(403).send(confirmationPayload(resolvedSourceId, operation, relPath, validation.normalizedPath, 'confirmation_required_path', 'This deletes a protected path.', matchedConfirmationGlob))
+      }
+      fs.unlinkSync(validation.fullPath)
+      return { status: 'deleted', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: operation, verified: true, existsBefore: true, existsAfter: false }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.post<{ Body: { sourceId?: string; path: string; to: string; overwrite?: boolean; createParents?: boolean; confirmedByUser?: boolean; confirmationToken?: string } }>('/api/move-file', async (request, reply) => {
+    try {
+      const { sourceId, path: fromPath, to, overwrite = false, createParents = false } = request.body
+      if (!fromPath || !to) return reply.code(400).send({ error: 'From and to required' })
+      const resolvedSourceId = resolveTargetSourceId(sourceId)
+      const sourceRoot = getResolvedActiveSources([resolvedSourceId])[0]?.path
+      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: fromPath, changeType: 'move', sourceRoot, toPath: to, confirmedByUser: request.body.confirmedByUser, confirmationToken: request.body.confirmationToken })
+      if (!validation.ok) {
+        const blocked = validation as Extract<typeof validation, { ok: false }>
+        return structuredWriteError(reply, 403, { sourceId: resolvedSourceId, path: blocked.requestedPath, requestedPath: blocked.requestedPath, normalizedPath: blocked.normalizedPath, to, sourceRootRelativePath: blocked.sourceRootRelativePath, changeType: 'move', error: { ...blocked.error, policy: blocked.policy } })
+      }
+      const fromExists = fs.existsSync(validation.fullPath)
+      if (!fromExists) return reply.code(404).send({ error: 'Source path not found' })
+      const target = path.resolve(path.join(sourceRoot, normalizeRepoRelativePath(to)))
+      if (!target.startsWith(path.resolve(sourceRoot))) return reply.code(403).send({ error: 'Target path blocked' })
+      if (fs.existsSync(target) && !overwrite) return reply.code(409).send({ error: 'Target already exists' })
+      if (!confirmOperation(request.body, resolvedSourceId, 'move', validation.normalizedPath, normalizeRepoRelativePath(to))) {
+        return reply.code(403).send(confirmationPayload(resolvedSourceId, 'move', fromPath, validation.normalizedPath, 'confirmation_required_path', 'This move/rename is confirmation-gated.', undefined, normalizeRepoRelativePath(to)))
+      }
+      if (createParents) fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.renameSync(validation.fullPath, target)
+      return { status: 'moved', sourceId: resolvedSourceId, from: fromPath, to: normalizeRepoRelativePath(to), verified: true, sourceExistsAfter: false, targetExistsAfter: true, contentHashBefore: verifiedWrite(target).contentHash, contentHashAfter: verifiedWrite(target).contentHash }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.post<{ Body: { sourceId?: string; path: string; createParents?: boolean; confirmedByUser?: boolean; confirmationToken?: string } }>('/api/mkdir', async (request, reply) => {
+    try {
+      const { sourceId, path: relPath, createParents = false } = request.body
+      if (!relPath) return reply.code(400).send({ error: 'Path required' })
+      const resolvedSourceId = resolveTargetSourceId(sourceId)
+      const sourceRoot = getResolvedActiveSources([resolvedSourceId])[0]?.path
+      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: relPath, changeType: 'mkdir', sourceRoot, confirmedByUser: request.body.confirmedByUser, confirmationToken: request.body.confirmationToken })
+      if (!validation.ok) {
+        const blocked = validation as Extract<typeof validation, { ok: false }>
+        return structuredWriteError(reply, 403, { sourceId: resolvedSourceId, path: blocked.requestedPath, requestedPath: blocked.requestedPath, normalizedPath: blocked.normalizedPath, sourceRootRelativePath: blocked.sourceRootRelativePath, changeType: 'mkdir', error: { ...blocked.error, policy: blocked.policy } })
+      }
+      if (fs.existsSync(validation.fullPath)) return reply.code(409).send({ error: 'Target already exists' })
+      if (!confirmOperation(request.body, resolvedSourceId, 'mkdir', validation.normalizedPath)) {
+        return reply.code(403).send(confirmationPayload(resolvedSourceId, 'mkdir', relPath, validation.normalizedPath, 'confirmation_required_path', 'This directory creation is confirmation-gated.'))
+      }
+      fs.mkdirSync(validation.fullPath, { recursive: createParents })
+      return { status: 'created', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: 'mkdir', verified: true, existsAfter: true }
+    } catch (err) {
+      return reply.code(400).send({ error: String(err) })
+    }
+  })
+
+  fastify.post<{ Body: { sourceId?: string; path: string; recursive?: boolean; onlyIfEmpty?: boolean; confirmedByUser?: boolean; confirmationToken?: string } }>('/api/rmdir', async (request, reply) => {
+    try {
+      const { sourceId, path: relPath, recursive = false, onlyIfEmpty = true } = request.body
+      if (!relPath) return reply.code(400).send({ error: 'Path required' })
+      const resolvedSourceId = resolveTargetSourceId(sourceId)
+      const sourceRoot = getResolvedActiveSources([resolvedSourceId])[0]?.path
+      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: relPath, changeType: 'rmdir', sourceRoot, confirmedByUser: request.body.confirmedByUser, confirmationToken: request.body.confirmationToken })
+      if (!validation.ok) {
+        const blocked = validation as Extract<typeof validation, { ok: false }>
+        return structuredWriteError(reply, 403, { sourceId: resolvedSourceId, path: blocked.requestedPath, requestedPath: blocked.requestedPath, normalizedPath: blocked.normalizedPath, sourceRootRelativePath: blocked.sourceRootRelativePath, changeType: 'rmdir', error: { ...blocked.error, policy: blocked.policy } })
+      }
+      if (!fs.existsSync(validation.fullPath)) return reply.code(404).send({ error: 'Directory not found' })
+      if (!fs.statSync(validation.fullPath).isDirectory()) return reply.code(400).send({ error: 'Not a directory' })
+      if (fs.readdirSync(validation.fullPath).length > 0 && !recursive && onlyIfEmpty) {
+        return reply.code(409).send({ status: 'error', verified: false, code: 'DIRECTORY_NOT_EMPTY', sourceId: resolvedSourceId, path: relPath, requestedPath: relPath, normalizedPath: validation.normalizedPath, changeType: 'rmdir', reason: 'directory_not_empty', hint: 'Pass recursive:true with confirmation or empty the directory first.' })
+      }
+      if (!confirmOperation(request.body, resolvedSourceId, 'rmdir', validation.normalizedPath)) {
+        return reply.code(403).send(confirmationPayload(resolvedSourceId, 'rmdir', relPath, validation.normalizedPath, 'recursive_delete_requires_confirmation', 'This directory removal is confirmation-gated.'))
+      }
+      fs.rmSync(validation.fullPath, { recursive: recursive || !onlyIfEmpty, force: false })
+      return { status: 'deleted', sourceId: resolvedSourceId, requestedPath: relPath, normalizedPath: validation.normalizedPath, path: relPath, changeType: 'rmdir', verified: true, existsAfter: false }
     } catch (err) {
       return reply.code(400).send({ error: String(err) })
     }

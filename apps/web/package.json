@@ -1,6 +1,6 @@
 {
   "name": "buildflow-web",
-  "version": "1.2.11-beta",
+  "version": "1.2.12-beta",
   "scripts": {
     "dev": "prisma generate && next dev -p ${PORT:-3054}",
     "build": "prisma generate && next build",

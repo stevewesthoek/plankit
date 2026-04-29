@@ -255,11 +255,26 @@
                               "allowDelete": {
                                 "type": "boolean"
                               },
+                              "allowDeleteDirectory": {
+                                "type": "boolean"
+                              },
                               "allowMove": {
                                 "type": "boolean"
                               },
                               "allowRename": {
                                 "type": "boolean"
+                              },
+                              "allowMkdir": {
+                                "type": "boolean"
+                              },
+                              "allowRmdir": {
+                                "type": "boolean"
+                              },
+                              "recursiveDeleteRequiresConfirmation": {
+                                "type": "boolean"
+                              },
+                              "maxRecursiveDeleteFilesWithoutConfirmation": {
+                                "type": "integer"
                               },
                               "allowedRoots": {
                                 "type": "array",
@@ -273,7 +288,25 @@
                                   "type": "string"
                                 }
                               },
+                              "blockedWriteGlobs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "generatedDeleteAllowedGlobs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
                               "confirmationRequiredGlobs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "protectedWriteGlobs": {
                                 "type": "array",
                                 "items": {
                                   "type": "string"
@@ -290,6 +323,12 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "binaryWriteBlocked": {
+                                "type": "boolean"
+                              },
+                              "binaryDeleteAllowedWithConfirmation": {
+                                "type": "boolean"
                               },
                               "maxWriteBytes": {
                                 "type": "integer"
@@ -750,11 +789,26 @@
                               "allowDelete": {
                                 "type": "boolean"
                               },
+                              "allowDeleteDirectory": {
+                                "type": "boolean"
+                              },
                               "allowMove": {
                                 "type": "boolean"
                               },
                               "allowRename": {
                                 "type": "boolean"
+                              },
+                              "allowMkdir": {
+                                "type": "boolean"
+                              },
+                              "allowRmdir": {
+                                "type": "boolean"
+                              },
+                              "recursiveDeleteRequiresConfirmation": {
+                                "type": "boolean"
+                              },
+                              "maxRecursiveDeleteFilesWithoutConfirmation": {
+                                "type": "integer"
                               },
                               "allowedRoots": {
                                 "type": "array",
@@ -768,7 +822,25 @@
                                   "type": "string"
                                 }
                               },
+                              "blockedWriteGlobs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "generatedDeleteAllowedGlobs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
                               "confirmationRequiredGlobs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "protectedWriteGlobs": {
                                 "type": "array",
                                 "items": {
                                   "type": "string"
@@ -785,6 +857,12 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "binaryWriteBlocked": {
+                                "type": "boolean"
+                              },
+                              "binaryDeleteAllowedWithConfirmation": {
+                                "type": "boolean"
                               },
                               "maxWriteBytes": {
                                 "type": "integer"
@@ -1521,6 +1599,15 @@
                     "changeType": {
                       "type": "string"
                     },
+                    "operation": {
+                      "type": "string"
+                    },
+                    "from": {
+                      "type": "string"
+                    },
+                    "to": {
+                      "type": "string"
+                    },
                     "created": {
                       "type": "boolean"
                     },
@@ -1556,6 +1643,24 @@
                     },
                     "contentPreview": {
                       "type": "string"
+                    },
+                    "existsBefore": {
+                      "type": "boolean"
+                    },
+                    "existsAfter": {
+                      "type": "boolean"
+                    },
+                    "sourceExistsAfter": {
+                      "type": "boolean"
+                    },
+                    "targetExistsAfter": {
+                      "type": "boolean"
+                    },
+                    "deletedFileCount": {
+                      "type": "integer"
+                    },
+                    "deletedDirectoryCount": {
+                      "type": "integer"
                     }
                   },
                   "required": [
@@ -1711,9 +1816,15 @@
                       "append",
                       "create",
                       "overwrite",
-                      "patch"
+                      "patch",
+                      "delete_file",
+                      "delete_directory",
+                      "move",
+                      "rename",
+                      "mkdir",
+                      "rmdir"
                     ],
-                    "description": "Choose append, create, overwrite, or patch."
+                    "description": "Choose append, create, overwrite, patch, delete_file, delete_directory, move, rename, mkdir, or rmdir."
                   },
                   "sourceId": {
                     "type": "string",
@@ -1722,6 +1833,10 @@
                   "path": {
                     "type": "string",
                     "description": "Target file path."
+                  },
+                  "to": {
+                    "type": "string",
+                    "description": "Target path for move or rename."
                   },
                   "content": {
                     "type": "string",
@@ -1745,6 +1860,27 @@
                     "description": "Allow multiple patch matches.",
                     "default": false
                   },
+                  "recursive": {
+                    "type": "boolean",
+                    "description": "Delete recursively when allowed."
+                  },
+                  "onlyIfEmpty": {
+                    "type": "boolean",
+                    "description": "Only remove a directory if empty.",
+                    "default": true
+                  },
+                  "overwrite": {
+                    "type": "boolean",
+                    "description": "Allow destination overwrite for move or rename."
+                  },
+                  "createParents": {
+                    "type": "boolean",
+                    "description": "Create parent directories for move or mkdir."
+                  },
+                  "createParentDirectories": {
+                    "type": "boolean",
+                    "description": "Alias for createParents."
+                  },
                   "reason": {
                     "type": "string",
                     "description": "Why the file changed."
@@ -1756,6 +1892,14 @@
                   "preflight": {
                     "type": "boolean",
                     "description": "Alias for dryRun."
+                  },
+                  "confirmedByUser": {
+                    "type": "boolean",
+                    "description": "Confirm the action when policy requires it."
+                  },
+                  "confirmationToken": {
+                    "type": "string",
+                    "description": "Confirmation token returned by preflight."
                   }
                 },
                 "required": [
@@ -1790,6 +1934,15 @@
                       "type": "string"
                     },
                     "changeType": {
+                      "type": "string"
+                    },
+                    "operation": {
+                      "type": "string"
+                    },
+                    "from": {
+                      "type": "string"
+                    },
+                    "to": {
                       "type": "string"
                     },
                     "created": {
@@ -1827,6 +1980,24 @@
                     },
                     "contentPreview": {
                       "type": "string"
+                    },
+                    "existsBefore": {
+                      "type": "boolean"
+                    },
+                    "existsAfter": {
+                      "type": "boolean"
+                    },
+                    "sourceExistsAfter": {
+                      "type": "boolean"
+                    },
+                    "targetExistsAfter": {
+                      "type": "boolean"
+                    },
+                    "deletedFileCount": {
+                      "type": "integer"
+                    },
+                    "deletedDirectoryCount": {
+                      "type": "integer"
                     }
                   },
                   "required": [

@@ -5,20 +5,23 @@ BuildFlow is a local-first planning and handoff layer for AI-native builders. It
 ## Canonical product references
 
 - [`README.md`](../../README.md)
-- [`docs/product/releases/buildflow-v1.2.11-beta.md`](./releases/buildflow-v1.2.11-beta.md)
+- [`docs/product/releases/buildflow-v1.2.12-beta.md`](./releases/buildflow-v1.2.12-beta.md)
 - [`docs/product/releases/custom-gpt-actions-v1.0.md`](./releases/custom-gpt-actions-v1.0.md)
 - [`docs/CUSTOM_GPT_INSTRUCTIONS.md`](../CUSTOM_GPT_INSTRUCTIONS.md)
 - [`docs/openapi.chatgpt/README.md`](../openapi.chatgpt/README.md)
 
 ## Current beta scope
 
-BuildFlow v1.2.11-beta adds a repo-agnostic `repo_app_write` profile for safe repo-local app-code work.
+BuildFlow v1.2.12-beta adds repo-agnostic app-maintainer capability for safe repo-local maintenance work.
 
 That beta now covers:
 
 - inspect and read connected sources
 - plan and generate execution packets
 - verified writes for allowed repo-local files
+- guarded delete, move, rename, mkdir, and rmdir operations
+- confirmation-gated cleanup for protected and maintenance-sensitive paths
+- consistent dotfile and env-template handling
 - `dryRun` / `preflight` checks before writes
 - structured policy errors for blocked or confirmation-required paths
 - source metadata that exposes `writable`, `writeProfile`, and `writePolicy`
@@ -30,4 +33,4 @@ The beta still blocks secrets, traversal, and generated/vendor output, and it ke
 ## Release history
 
 - [`v1.0`](./releases/custom-gpt-actions-v1.0.md) is the stable Custom GPT Actions baseline.
-- [`v1.2.11-beta`](./releases/buildflow-v1.2.11-beta.md) is the current beta write-policy release.
+- [`v1.2.12-beta`](./releases/buildflow-v1.2.12-beta.md) is the current beta maintainer-release.

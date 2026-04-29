@@ -27,16 +27,20 @@ For the public GitHub beta, use the Local path:
 
 The beta release note is here:
 
-- [`docs/product/releases/buildflow-v1.2.11-beta.md`](docs/product/releases/buildflow-v1.2.11-beta.md)
+- [`docs/product/releases/buildflow-v1.2.12-beta.md`](docs/product/releases/buildflow-v1.2.12-beta.md)
 
-## What v1.2.11-beta adds
+## What v1.2.12-beta adds
 
-BuildFlow v1.2.11-beta expands safe repo-local writing beyond docs-only workflows.
+BuildFlow v1.2.12-beta expands safe repo-local work beyond writes-only workflows.
 
 It adds:
 
 - a repo-agnostic `repo_app_write` policy
 - normal app-code roots such as `src/**`, `app/**`, `components/**`, `lib/**`, `prisma/**`, `scripts/**`, `tests/**`, and related paths
+- a guarded `repo_app_maintainer` profile for safe delete, move, rename, mkdir, and rmdir tasks
+- confirmation-gated cleanup for protected files, workflows, lockfiles, and selected maintenance paths
+- consistent dotfile handling, including readable/writable env templates
+- generated artifact cleanup and binary asset deletion when policy allows it
 - `dryRun` / `preflight` checks before writing
 - structured write errors for blocked or confirmation-required paths
 - writable source metadata, including `writeProfile` and `writePolicy`
@@ -60,6 +64,7 @@ The current write policy still blocks:
 - `coverage/**`
 
 Some paths still require explicit confirmation, including lockfiles, GitHub workflows, `LICENSE`, Prisma migrations, and package dependency changes.
+Delete, move, rename, mkdir, and rmdir are also policy-checked and confirmation-gated when appropriate.
 
 BuildFlow only treats a write as successful when the response includes `verified:true`.
 
