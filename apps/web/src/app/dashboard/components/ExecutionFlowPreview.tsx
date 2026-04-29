@@ -1,24 +1,33 @@
+import { DashboardMetaRow } from './ui/DashboardMetaRow'
+import { DashboardPanel } from './ui/DashboardPanel'
+import { DashboardSectionHeader } from './ui/DashboardSectionHeader'
+import { DashboardStatusDot } from './ui/DashboardStatusDot'
+
 export function ExecutionFlowPreview() {
+  const states: Array<[string, 'neutral' | 'good' | 'warn' | 'bad']> = [
+    ['pending', 'neutral' as const],
+    ['active', 'good' as const],
+    ['done', 'good' as const],
+    ['blocked', 'warn' as const],
+    ['failed', 'bad' as const],
+    ['verified', 'good' as const],
+    ['paused', 'neutral' as const]
+  ]
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/50">
-      <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Execution states</h3>
-      <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
-        {[
-          ['pending', 'bg-slate-400'],
-          ['active', 'bg-blue-500'],
-          ['done', 'bg-emerald-500'],
-          ['blocked', 'bg-amber-500'],
-          ['failed', 'bg-red-500'],
-          ['verified', 'bg-emerald-600'],
-          ['paused', 'bg-slate-500']
-        ].map(([label, dotClass]) => (
-          <div key={label} className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs dark:border-slate-800 dark:bg-slate-950/50">
-            <div className={`w-1.5 h-1.5 rounded-full ${dotClass} flex-shrink-0`} />
-            <div className="font-medium text-slate-900 dark:text-slate-50 truncate">{label}</div>
-          </div>
+    <DashboardPanel className="p-4">
+      <DashboardSectionHeader eyebrow="Execution" title="Execution states" detail="Progress markers used in plans and handoffs." />
+      <div className="mt-4 divide-y divide-bf-border dark:divide-slate-800">
+        {states.map(([label, tone]) => (
+          <DashboardMetaRow
+            key={label}
+            label={<span className="inline-flex items-center gap-2"><DashboardStatusDot tone={tone} />{label}</span>}
+            value="State marker"
+            className="py-2 text-[12px]"
+          />
         ))}
       </div>
-      <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">Load a plan to see task progress here.</p>
-    </div>
+      <p className="mt-3 text-[12px] text-bf-muted">Load a plan to see task progress here.</p>
+    </DashboardPanel>
   )
 }

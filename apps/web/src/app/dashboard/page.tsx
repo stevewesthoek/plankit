@@ -15,6 +15,9 @@ import { InfoPanels } from './components/InfoPanels'
 import { InsightPanel } from './components/InsightPanel'
 import { DashboardRail } from './components/DashboardRail'
 import { DashboardActivityFeed } from './components/DashboardActivityFeed'
+import { DashboardButton } from './components/ui/DashboardButton'
+import { DashboardPanel } from './components/ui/DashboardPanel'
+import { DashboardCodeText } from './components/ui/DashboardCodeText'
 
 type DashboardSection = 'overview' | 'sources' | 'activity' | 'plan' | 'handoff' | 'settings'
 
@@ -500,20 +503,20 @@ Keep all services healthy on ports 3052, 3053, 3054.`
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
               {error && (
                 <div className="px-5 pt-4 lg:px-6">
-                  <div className="rounded-3xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 shadow-sm dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">
+                  <DashboardPanel className="border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
+                      <div className="min-w-0">
                         <div className="font-semibold">Unable to load sources</div>
                         <p className="mt-1 text-xs text-red-700 dark:text-red-200">{error}</p>
-                        {loadErrorDetail && <p className="mt-1 font-mono text-[11px] text-red-600 dark:text-red-300">{loadErrorDetail}</p>}
+                        {loadErrorDetail && <p className="mt-1 text-[11px] text-red-600 dark:text-red-300"><DashboardCodeText className="break-words text-[11px] text-red-600 dark:text-red-300">{loadErrorDetail}</DashboardCodeText></p>}
                       </div>
                       <div className="flex items-center gap-2">
-                        <button type="button" onClick={() => fetchSources()} disabled={mutationLoading} className="rounded-full border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/40 dark:bg-slate-900 dark:text-red-200 dark:hover:bg-slate-800">
+                        <DashboardButton type="button" onClick={() => fetchSources()} disabled={mutationLoading} variant="secondary" className="border-red-200 bg-white text-red-700 hover:bg-red-50 dark:border-red-900/40 dark:bg-slate-900 dark:text-red-200 dark:hover:bg-slate-800">
                           Retry load
-                        </button>
+                        </DashboardButton>
                       </div>
                     </div>
-                  </div>
+                  </DashboardPanel>
                 </div>
               )}
 

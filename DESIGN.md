@@ -158,6 +158,7 @@ Do not include:
 
 Use:
 
+- shared dashboard UI primitives for buttons, panels, rows, status, and headers
 - high-quality spacing
 - precise alignment
 - restrained color
@@ -169,6 +170,7 @@ Use:
 - crisp hover and focus states
 - one consistent icon source or no icons at all
 - small dots plus plain text for secondary state
+- professional icons from one source only, or no icons if consistency cannot be maintained
 
 Avoid:
 
@@ -187,7 +189,9 @@ Typography should feel modern, precise, and readable.
 
 Guidelines:
 
-- use a clean sans-serif system or project-approved font stack
+- use the project font stack:
+  - UI text: `ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", sans-serif`
+  - code/prompt/path text: `"JetBrainsMono Nerd Font", "JetBrains Mono", "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`
 - prefer clear hierarchy over decorative typography
 - keep body copy concise
 - use sentence case for labels and headings

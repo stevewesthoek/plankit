@@ -1,23 +1,31 @@
+import { DashboardCodeText } from './ui/DashboardCodeText'
+import { DashboardMetaRow } from './ui/DashboardMetaRow'
+import { DashboardPanel } from './ui/DashboardPanel'
+import { DashboardSectionHeader } from './ui/DashboardSectionHeader'
+
 export function InfoPanels() {
   return (
     <>
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/50">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Execution modes</h2>
-        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">direct-agent: local agent (3052) | relay-agent: via relay (3053)</p>
-        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-          Set via <code className="rounded bg-slate-100 px-1 dark:bg-slate-950 dark:text-slate-100">BUILDFLOW_BACKEND_MODE</code>
+      <DashboardPanel className="p-4">
+        <DashboardSectionHeader eyebrow="Execution" title="Execution modes" detail="Local agent and relay remain separate." />
+        <div className="mt-4 space-y-2">
+          <DashboardMetaRow label="Direct" value="Local agent (3052)" className="text-[12px]" />
+          <DashboardMetaRow label="Relay" value="Via relay (3053)" className="text-[12px]" />
+        </div>
+        <p className="mt-3 text-[12px] text-bf-muted">
+          Set via <DashboardCodeText>BUILDFLOW_BACKEND_MODE</DashboardCodeText>
         </p>
-      </div>
+      </DashboardPanel>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/50">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Local setup</h2>
-        <ul className="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-300">
-          <li>• <code className="rounded bg-slate-100 px-1 dark:bg-slate-950">pnpm install</code></li>
-          <li>• <code className="rounded bg-slate-100 px-1 dark:bg-slate-950">pnpm local:restart</code></li>
-          <li>• Open <code className="rounded bg-slate-100 px-1 dark:bg-slate-950">http://127.0.0.1:3054</code></li>
-          <li>• See README.md for source setup and ChatGPT import</li>
-        </ul>
-      </div>
+      <DashboardPanel className="p-4">
+        <DashboardSectionHeader eyebrow="Setup" title="Local setup" detail="Keep the stack running locally." />
+        <div className="mt-4 space-y-2 text-[12px] text-bf-muted">
+          <div><DashboardCodeText>pnpm install</DashboardCodeText></div>
+          <div><DashboardCodeText>pnpm local:restart</DashboardCodeText></div>
+          <div>Open <DashboardCodeText>http://127.0.0.1:3054</DashboardCodeText></div>
+          <div>See README.md for source setup and ChatGPT import.</div>
+        </div>
+      </DashboardPanel>
     </>
   )
 }

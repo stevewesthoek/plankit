@@ -22,6 +22,10 @@ This is a visual and information-architecture pass, not a backend rewrite.
 - Keep actions in compact chrome instead of repeated large buttons
 - Preserve reliability states and cached source visibility
 - Keep the dashboard calm in both light and dark mode
+- BuildFlow dashboard components should share a small primitive layer for buttons, panels, rows, status, and section headers
+- Use one professional icon source or no icons at all
+- Default controls should be rectangular, not pill-shaped
+- UI text should use the system font stack; code, prompts, and paths should use JetBrains Mono or JetBrainsMono Nerd Font
 
 ## Layout
 

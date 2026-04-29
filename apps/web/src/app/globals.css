@@ -2,8 +2,59 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@layer base {
+  :root {
+    --font-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", sans-serif;
+    --font-mono: "JetBrainsMono Nerd Font", "JetBrains Mono", "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --bf-bg: 248 250 252;
+    --bf-surface: 255 255 255;
+    --bf-surface-subtle: 248 250 252;
+    --bf-border: 226 232 240;
+    --bf-text: 15 23 42;
+    --bf-muted: 100 116 139;
+    --bf-accent: 15 23 42;
+    --bf-success: 16 185 129;
+    --bf-warning: 245 158 11;
+    --bf-danger: 239 68 68;
+  }
+
+  .dark {
+    --bf-bg: 2 6 23;
+    --bf-surface: 15 23 42;
+    --bf-surface-subtle: 15 23 42;
+    --bf-border: 30 41 59;
+    --bf-text: 226 232 240;
+    --bf-muted: 148 163 184;
+    --bf-accent: 226 232 240;
+    --bf-success: 16 185 129;
+    --bf-warning: 245 158 11;
+    --bf-danger: 248 113 113;
+  }
+
+  html {
+    background: rgb(var(--bf-bg));
+  }
+
+  body {
+    font-family: var(--font-ui);
+    color: rgb(var(--bf-text));
+    background: rgb(var(--bf-bg));
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+  }
+}
+
+.font-ui {
+  font-family: var(--font-ui);
+}
+
+.font-mono-ui {
+  font-family: var(--font-mono);
 }
