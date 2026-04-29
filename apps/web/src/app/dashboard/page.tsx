@@ -19,11 +19,12 @@ import { DashboardButton } from './components/ui/DashboardButton'
 import { DashboardPanel } from './components/ui/DashboardPanel'
 import { DashboardCodeText } from './components/ui/DashboardCodeText'
 import { buildClaudeHandoffPrompt, buildCodexHandoffPrompt } from './handoffPrompts'
-import type { DashboardActivityEvent, DashboardSection, DashboardSourceSnapshot } from './types'
+import type { DashboardActivityEvent, DashboardLocalPlan, DashboardPlanTaskStatus, DashboardSection, DashboardSourceSnapshot } from './types'
 
 const TERMINAL_INDEX_STATUSES = new Set(['ready', 'failed', 'disabled'])
 
 const DASHBOARD_SOURCE_CACHE_KEY = 'buildflow-dashboard-source-snapshot'
+const DASHBOARD_LOCAL_PLAN_CACHE_KEY = 'buildflow-dashboard-local-plan'
 type FetchSourcesOptions = {
   blocking?: boolean
 }
@@ -90,6 +91,90 @@ const saveSourceSnapshot = (snapshot: DashboardSourceSnapshot) => {
     window.localStorage.setItem(DASHBOARD_SOURCE_CACHE_KEY, JSON.stringify(snapshot))
   } catch {
     // Local storage is a convenience cache only. Ignore quota/private-mode failures.
+  }
+}
+
+const readLocalPlan = (): DashboardLocalPlan | null => {
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_LOCAL_PLAN_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<DashboardLocalPlan>
+    if (!parsed.id || !parsed.title || !Array.isArray(parsed.tasks)) return null
+    return {
+      id: parsed.id,
+      title: parsed.title,
+      summary: parsed.summary || 'Local dashboard plan',
+      sourceId: parsed.sourceId || null,
+      createdAt: parsed.createdAt || new Date().toISOString(),
+      updatedAt: parsed.updatedAt || new Date().toISOString(),
+      tasks: parsed.tasks.map((task, index) => ({
+        id: task.id || `task-${index + 1}`,
+        title: task.title || `Task ${index + 1}`,
+        detail: task.detail || 'Review and complete this local task.',
+        status: task.status || 'pending'
+      }))
+    }
+  } catch {
+    return null
+  }
+}
+
+const saveLocalPlan = (plan: DashboardLocalPlan | null) => {
+  try {
+    if (!plan) {
+      window.localStorage.removeItem(DASHBOARD_LOCAL_PLAN_CACHE_KEY)
+      return
+    }
+    window.localStorage.setItem(DASHBOARD_LOCAL_PLAN_CACHE_KEY, JSON.stringify(plan))
+  } catch {
+    // Local plan persistence is convenience-only. Ignore storage failures.
+  }
+}
+
+const createDashboardPlan = (args: {
+  sources: KnowledgeSource[]
+  selectedSource: KnowledgeSource | null
+  agentConnected: boolean
+}): DashboardLocalPlan => {
+  const now = new Date().toISOString()
+  const scope = args.selectedSource || args.sources.find(source => source.enabled && source.indexStatus === 'ready') || args.sources[0] || null
+  const scopeLabel = scope?.label || 'workspace'
+  const readyCount = args.sources.filter(source => source.enabled && source.indexStatus === 'ready').length
+  const tasks = [
+    {
+      id: 'review-context',
+      title: `Review ${scopeLabel} context`,
+      detail: scope ? `Inspect ${scope.path} and confirm the next implementation target.` : 'Add or select a local source before implementation work.',
+      status: 'active' as const
+    },
+    {
+      id: 'draft-implementation',
+      title: 'Draft the next scoped implementation step',
+      detail: 'Use the current source state and recent activity to define one narrow BuildFlow Local task.',
+      status: 'pending' as const
+    },
+    {
+      id: 'prepare-handoff',
+      title: 'Prepare execution handoff',
+      detail: 'Copy the dynamic Codex or Claude prompt from the Handoff view with the current plan context.',
+      status: 'pending' as const
+    },
+    {
+      id: 'validate-result',
+      title: 'Validate and record outcome',
+      detail: 'Run type-checks, public-scope audit, and relevant dashboard/source validation before committing.',
+      status: 'pending' as const
+    }
+  ]
+
+  return {
+    id: `local-plan-${Date.now()}`,
+    title: scope ? `BuildFlow Local plan · ${scope.label}` : 'BuildFlow Local workspace plan',
+    summary: `${readyCount} ready sources · ${args.agentConnected ? 'agent connected' : 'agent offline'} · local-only workflow`,
+    sourceId: scope?.id || null,
+    createdAt: now,
+    updatedAt: now,
+    tasks
   }
 }
 
@@ -210,6 +295,7 @@ export default function Dashboard() {
   const [showAddSourceForm, setShowAddSourceForm] = useState(false)
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
   const [activityEvents, setActivityEvents] = useState<DashboardActivityEvent[]>([])
+  const [localPlan, setLocalPlan] = useState<DashboardLocalPlan | null>(null)
 
   const addSourceFormRef = useRef<HTMLFormElement>(null)
   const snapshotRef = useRef<DashboardSourceSnapshot | null>(null)
@@ -272,6 +358,7 @@ export default function Dashboard() {
     writeMode,
     agentConnected,
     activityFeedEntries,
+    localPlan,
     currentSection: currentSectionLabel
   })
   const claudeCodePrompt = buildClaudeHandoffPrompt({
@@ -282,10 +369,42 @@ export default function Dashboard() {
     writeMode,
     agentConnected,
     activityFeedEntries,
+    localPlan,
     currentSection: currentSectionLabel
   })
   const handoffSelectedSourceLabel = selectedSource ? `${selectedSource.label} · ${selectedSource.id}` : null
   const handoffSourceSummary = `${sources.length} sources · ${readySourceCount} ready · ${activeSourceCount} active`
+
+  const handleCreateLocalPlan = () => {
+    const nextPlan = createDashboardPlan({ sources, selectedSource, agentConnected })
+    setLocalPlan(nextPlan)
+    recordActivity('local-plan-created', 'Local plan created', `${nextPlan.title} · ${nextPlan.tasks.length} tasks`, 'good')
+  }
+
+  const handleUpdatePlanTaskStatus = (taskId: string, status: DashboardPlanTaskStatus) => {
+    const task = localPlan?.tasks.find(item => item.id === taskId)
+    setLocalPlan(current => {
+      if (!current) return current
+      return {
+        ...current,
+        updatedAt: new Date().toISOString(),
+        tasks: current.tasks.map(item => item.id === taskId ? { ...item, status } : item)
+      }
+    })
+    if (task) {
+      recordActivity('local-plan-task-updated', 'Plan task updated', `${task.title} · ${status}`, status === 'done' ? 'good' : status === 'blocked' ? 'warn' : 'neutral')
+    }
+  }
+
+  const handleClearLocalPlan = () => {
+    setLocalPlan(null)
+    recordActivity('local-plan-cleared', 'Local plan cleared', 'The in-browser dashboard plan was cleared.', 'warn')
+  }
+
+  const handleOpenHandoff = () => {
+    setActiveDashboardSection('handoff')
+    recordActivity('handoff-opened', 'Handoff opened', 'Dynamic handoff prompts are ready for the current workspace.', 'neutral')
+  }
 
   const fetchSources = async (options: FetchSourcesOptions = {}) => {
     const snapshot = snapshotRef.current
@@ -412,6 +531,14 @@ export default function Dashboard() {
     if (sources.some(source => source.id === selectedSourceId)) return
     setSelectedSourceId(sources[0]?.id ?? null)
   }, [sources, selectedSourceId])
+
+  useEffect(() => {
+    setLocalPlan(readLocalPlan())
+  }, [])
+
+  useEffect(() => {
+    saveLocalPlan(localPlan)
+  }, [localPlan])
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem('buildflow-dashboard-theme')
@@ -696,7 +823,16 @@ export default function Dashboard() {
                 {activeDashboardSection === 'plan' && (
                   <div className="h-full min-h-0 overflow-y-auto pb-4">
                     <div className="space-y-4">
-                      <PlanPlaceholderPanel sources={sources} agentConnected={agentConnected} />
+                      <PlanPlaceholderPanel
+                        sources={sources}
+                        agentConnected={agentConnected}
+                        selectedSource={selectedSource}
+                        plan={localPlan}
+                        onCreatePlan={handleCreateLocalPlan}
+                        onUpdateTaskStatus={handleUpdatePlanTaskStatus}
+                        onClearPlan={handleClearLocalPlan}
+                        onOpenHandoff={handleOpenHandoff}
+                      />
                       <ExecutionFlowPreview />
                     </div>
                   </div>

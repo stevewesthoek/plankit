@@ -20,3 +20,22 @@ export type DashboardSourceSnapshot = {
   writeMode: WriteMode
   savedAt: string
 }
+
+export type DashboardPlanTaskStatus = 'pending' | 'active' | 'done' | 'blocked'
+
+export type DashboardPlanTask = {
+  id: string
+  title: string
+  detail: string
+  status: DashboardPlanTaskStatus
+}
+
+export type DashboardLocalPlan = {
+  id: string
+  title: string
+  summary: string
+  sourceId: string | null
+  createdAt: string
+  updatedAt: string
+  tasks: DashboardPlanTask[]
+}
