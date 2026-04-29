@@ -89,6 +89,10 @@ This is a visual and information-architecture pass, not a backend rewrite.
 - Avoid default Tailwind admin-dashboard spacing
 - Make light mode feel intentional, not generic
 - Make dark mode feel dense and premium
+- Do not use pill-shaped controls by default
+- Use one icon source or no icons at all
+- Keep status text short enough to fit the inspector without overflow
+- Prefer dots and plain text over badges in source rows
 
 ## Reliability requirements
 
@@ -105,4 +109,3 @@ This is a visual and information-architecture pass, not a backend rewrite.
 - chat implementation
 - new source-management permissions model
 - managed/private repo changes
-

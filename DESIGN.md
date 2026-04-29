@@ -41,6 +41,11 @@ Avoid:
 - excessive cards and borders
 - decorative motion that does not help the workflow
 - default admin-template surfaces
+- pill-shaped controls as the default button style
+- handmade inline SVG icon sets
+- mixed icon styles or inconsistent stroke weights
+- status text that overflows narrow inspector panels
+- badge-heavy source rows when plain text and dots are enough
 
 ## Core dashboard rule: no page scroll
 
@@ -162,6 +167,8 @@ Use:
 - status indicators that are easy to understand
 - calm empty states
 - crisp hover and focus states
+- one consistent icon source or no icons at all
+- small dots plus plain text for secondary state
 
 Avoid:
 
@@ -172,6 +179,7 @@ Avoid:
 - long marketing copy inside the dashboard
 - gradients as the primary design language
 - visual density that creates intimidation
+- rounded-full buttons and chips unless they are tiny dots
 
 ## Typography
 
