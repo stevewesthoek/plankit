@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { getDefaultWritePolicy, validateWriteTarget } from '../packages/cli/src/agent/safe-access'
 import { validatePath } from '../packages/cli/src/agent/permissions'
-import { composeArtifactRelativePath } from '../apps/web/src/lib/actions/gpt'
+import { attachWriteConfirmation, composeArtifactRelativePath } from '../apps/web/src/lib/actions/gpt'
 
 const policy = getDefaultWritePolicy()
 assert.equal(policy.allowCreate, true)
@@ -73,6 +73,26 @@ if (!artifactPrivateKey.ok) {
   assert.equal(artifactPrivateKey.requestedPath, artifactPath)
   assert.ok(artifactPrivateKey.normalizedPath.length > 0)
 }
+
+const confirmationPayload: Record<string, unknown> = {}
+attachWriteConfirmation(confirmationPayload, { confirmedByUser: true, confirmationToken: 'confirm:test:append:scripts/x-demo-confirmation-test.md' })
+assert.equal(confirmationPayload.confirmedByUser, true)
+assert.equal(confirmationPayload.confirmationToken, 'confirm:test:append:scripts/x-demo-confirmation-test.md')
+
+const confirmationPayloadWithoutToken: Record<string, unknown> = {}
+attachWriteConfirmation(confirmationPayloadWithoutToken, { confirmedByUser: false })
+assert.equal(confirmationPayloadWithoutToken.confirmedByUser, false)
+assert.equal('confirmationToken' in confirmationPayloadWithoutToken, false)
+
+const confirmationTarget = validateWriteTarget({
+  sourceId: 'buildflow',
+  requestedPath: 'scripts/x-demo-confirmation-test.md',
+  changeType: 'create',
+  sourceRoot: root,
+  content: '# confirmation test\n',
+  confirmationToken: 'confirm:buildflow:create:scripts/x-demo-confirmation-test.md'
+})
+assert.equal(confirmationTarget.ok, true)
 
 assert.equal(validatePath('.env.example').valid, true)
 assert.equal(validatePath('.gitignore').valid, true)

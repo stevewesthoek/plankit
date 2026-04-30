@@ -435,6 +435,13 @@ async function ensureContextSourcesAllowed(sourceIds: string[], userToken?: stri
   }
 }
 
+export function attachWriteConfirmation(payload: Record<string, unknown>, body: Record<string, unknown>) {
+  payload.confirmedByUser = body.confirmedByUser === true
+  if (typeof body.confirmationToken === 'string' && body.confirmationToken.length > 0) {
+    payload.confirmationToken = body.confirmationToken
+  }
+}
+
 async function preflightWrite(body: Record<string, unknown>, userToken?: string) {
   const sourceError = await requireExplicitSourceId(body, userToken)
   if (sourceError) return sourceError
@@ -892,10 +899,12 @@ export async function dispatchBuildFlowFileChange(body: Record<string, unknown>,
     path: body.path,
     reason: body.reason
   }
+  attachWriteConfirmation(payload, body)
 
   if (changeType === 'append') {
     payload.content = body.content
     payload.separator = body.separator ?? '\n\n'
+    attachWriteConfirmation(payload, body)
     const result = await executeAction('/api/append-file', payload, userToken)
     const verified = assertVerifiedWriteResult(result, 'applyBuildFlowFileChange append')
     const path = typeof (result as Record<string, unknown>).path === 'string' ? (result as Record<string, unknown>).path as string : typeof body.path === 'string' ? body.path : undefined
@@ -917,6 +926,7 @@ export async function dispatchBuildFlowFileChange(body: Record<string, unknown>,
   if (changeType === 'create') {
     payload.content = body.content
     payload.mode = 'createOnly'
+    attachWriteConfirmation(payload, body)
     const result = await executeAction('/api/write-file', payload, userToken)
     const verified = assertVerifiedWriteResult(result, 'applyBuildFlowFileChange create')
     const path = typeof (result as Record<string, unknown>).path === 'string' ? (result as Record<string, unknown>).path as string : typeof body.path === 'string' ? body.path : undefined
@@ -938,6 +948,7 @@ export async function dispatchBuildFlowFileChange(body: Record<string, unknown>,
   if (changeType === 'overwrite') {
     payload.content = body.content
     payload.mode = 'overwrite'
+    attachWriteConfirmation(payload, body)
     const result = await executeAction('/api/write-file', payload, userToken)
     const verified = assertVerifiedWriteResult(result, 'applyBuildFlowFileChange overwrite')
     const path = typeof (result as Record<string, unknown>).path === 'string' ? (result as Record<string, unknown>).path as string : typeof body.path === 'string' ? body.path : undefined
@@ -960,6 +971,7 @@ export async function dispatchBuildFlowFileChange(body: Record<string, unknown>,
     payload.find = body.find
     payload.replace = body.replace
     payload.allowMultiple = body.allowMultiple ?? false
+    attachWriteConfirmation(payload, body)
     const result = await executeAction('/api/patch-file', payload, userToken)
     const verified = assertVerifiedWriteResult(result, 'applyBuildFlowFileChange patch')
     const path = typeof (result as Record<string, unknown>).path === 'string' ? (result as Record<string, unknown>).path as string : typeof body.path === 'string' ? body.path : undefined
@@ -1034,7 +1046,7 @@ export async function dispatchBuildFlowFileChange(body: Record<string, unknown>,
 
   if (changeType === 'mkdir') {
     payload.createParents = body.createParents === true || body.createParentDirectories === true
-    payload.confirmedByUser = body.confirmedByUser === true
+    attachWriteConfirmation(payload, body)
     const result = await executeAction('/api/mkdir', payload, userToken)
     const path = typeof (result as Record<string, unknown>).path === 'string' ? (result as Record<string, unknown>).path as string : typeof body.path === 'string' ? body.path : undefined
     return withActivity(result as Record<string, unknown>, makeActivity({

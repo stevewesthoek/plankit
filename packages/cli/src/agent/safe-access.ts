@@ -342,6 +342,23 @@ function buildConfirmationError(reason: string, hint: string): WriteValidationEr
   return { code: 'REQUIRES_EXPLICIT_CONFIRMATION', message: 'This change requires explicit confirmation.', userMessage: 'BuildFlow needs explicit confirmation before making this change.', reason, hint, requiresConfirmation: true }
 }
 
+function buildConfirmationToken(sourceId: string | undefined, operation: WriteChangeType, normalizedPath: string, toPath?: string): string {
+  return `confirm:${sourceId || ''}:${operation}:${normalizedPath}${toPath ? `->${normalizeRepoRelativePath(toPath)}` : ''}`
+}
+
+function hasValidConfirmation(params: {
+  sourceId?: string
+  changeType: WriteChangeType
+  normalizedPath: string
+  toPath?: string
+  confirmedByUser?: boolean
+  confirmationToken?: string
+}): boolean {
+  if (params.confirmedByUser === true) return true
+  if (typeof params.confirmationToken !== 'string' || !params.confirmationToken) return false
+  return params.confirmationToken === buildConfirmationToken(params.sourceId, params.changeType, params.normalizedPath, params.toPath)
+}
+
 function isConfirmationRequiredPath(normalizedPath: string): boolean {
   return CONFIRMATION_REQUIRED_GLOBS.some(pattern => matchesGlob(pattern, normalizedPath))
 }
@@ -392,12 +409,26 @@ export function validateWriteTarget(params: {
     return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: { code: 'PATH_NOT_ALLOWED', message: 'This path is blocked by the source write policy.', userMessage: 'BuildFlow can read this file, but the current write policy blocks changes to this path.', reason: 'path_not_allowed', hint: 'Choose an allowed repo-local path or update the source write policy.', requiresConfirmation: false } }
   }
 
-  if (isConfirmationRequiredPath(normalizedPath)) {
+  if (isConfirmationRequiredPath(normalizedPath) && !hasValidConfirmation({
+    sourceId: params.sourceId,
+    changeType: params.changeType,
+    normalizedPath,
+    toPath: params.toPath,
+    confirmedByUser: params.confirmedByUser,
+    confirmationToken: params.confirmationToken
+  })) {
     return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: buildConfirmationError('confirmation_required_path', 'Explicitly confirm before editing lockfiles, GitHub workflows, LICENSE, or Prisma migrations.') }
   }
 
   if (normalizedPath === 'package.json') {
-    if (typeof params.content === 'string' && isDependencyChange(params.content)) {
+    if (typeof params.content === 'string' && isDependencyChange(params.content) && !hasValidConfirmation({
+      sourceId: params.sourceId,
+      changeType: params.changeType,
+      normalizedPath,
+      toPath: params.toPath,
+      confirmedByUser: params.confirmedByUser,
+      confirmationToken: params.confirmationToken
+    })) {
       return { ok: false, requestedPath, normalizedPath, sourceRootRelativePath, policy, error: buildConfirmationError('dependency_change', 'Explicitly confirm dependency changes before editing package.json.') }
     }
     if (typeof params.content === 'string') {

@@ -462,14 +462,14 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
     }
   })
 
-  fastify.post<{ Body: { sourceId?: string; path: string; content: string; mode?: 'createOnly' | 'overwrite'; reason?: string } }>('/api/write-file', async (request, reply) => {
+  fastify.post<{ Body: { sourceId?: string; path: string; content: string; mode?: 'createOnly' | 'overwrite'; reason?: string; confirmedByUser?: boolean; confirmationToken?: string } }>('/api/write-file', async (request, reply) => {
     try {
       const { sourceId, path: relPath, content, mode = 'createOnly' } = request.body
       assertWriteMode(false, relPath)
       if (!relPath || typeof content !== 'string') return reply.code(400).send({ error: 'Path and content required' })
       const resolvedSourceId = resolveTargetSourceId(sourceId)
       const sourceRoot = getResolvedActiveSources([resolvedSourceId])[0]?.path
-      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: relPath, changeType: mode === 'overwrite' ? 'overwrite' : 'create', sourceRoot })
+      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: relPath, changeType: mode === 'overwrite' ? 'overwrite' : 'create', sourceRoot, content, confirmedByUser: request.body.confirmedByUser, confirmationToken: request.body.confirmationToken })
       if (!validation.ok) {
         const blocked = validation as Extract<typeof validation, { ok: false }>
         return writeError(reply, 403, {
@@ -491,7 +491,7 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
     }
   })
 
-  fastify.post<{ Body: { sourceId?: string; path: string; find: string; replace: string } }>('/api/patch-file', async (request, reply) => {
+  fastify.post<{ Body: { sourceId?: string; path: string; find: string; replace: string; confirmedByUser?: boolean; confirmationToken?: string } }>('/api/patch-file', async (request, reply) => {
     try {
       const { sourceId, path: relPath, find, replace } = request.body
       assertWriteMode(false, relPath)
@@ -499,7 +499,7 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
       if (typeof replace !== 'string') return reply.code(400).send({ error: 'Replace required' })
       const resolvedSourceId = resolveTargetSourceId(sourceId)
       const sourceRoot = getResolvedActiveSources([resolvedSourceId])[0]?.path
-      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: relPath, changeType: 'patch', sourceRoot })
+      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: relPath, changeType: 'patch', sourceRoot, confirmedByUser: request.body.confirmedByUser, confirmationToken: request.body.confirmationToken })
       if (!validation.ok) {
         const blocked = validation as Extract<typeof validation, { ok: false }>
         return writeError(reply, 403, {
@@ -725,14 +725,14 @@ export async function startLocalServer(port: number = 3052): Promise<void> {
     }
   })
 
-  fastify.post<{ Body: { sourceId?: string; path: string; content: string; separator?: string; reason?: string } }>('/api/append-file', async (request, reply) => {
+  fastify.post<{ Body: { sourceId?: string; path: string; content: string; separator?: string; reason?: string; confirmedByUser?: boolean; confirmationToken?: string } }>('/api/append-file', async (request, reply) => {
     try {
       const { sourceId, path: relPath, content, separator = '\n\n' } = request.body
       assertWriteMode(false, relPath)
       if (!relPath || typeof content !== 'string') return reply.code(400).send({ error: 'Path and content required' })
       const resolvedSourceId = resolveTargetSourceId(sourceId)
       const sourceRoot = getResolvedActiveSources([resolvedSourceId])[0]?.path
-      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: relPath, changeType: 'append', sourceRoot })
+      const validation = validateWriteTarget({ sourceId: resolvedSourceId, requestedPath: relPath, changeType: 'append', sourceRoot, content, confirmedByUser: request.body.confirmedByUser, confirmationToken: request.body.confirmationToken })
       if (!validation.ok) {
         const blocked = validation as Extract<typeof validation, { ok: false }>
         return writeError(reply, 403, {
